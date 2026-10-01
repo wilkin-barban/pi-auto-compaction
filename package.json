@@ -1,0 +1,33 @@
+{
+  "name": "pi-auto-compaction",
+  "version": "1.0.0",
+  "description": "Extensión privada de compactación automática controlada por el usuario para Pi, gentle-shell y herdr",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wilkinbarban/pi-auto-compaction.git"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@earendil-works/pi-ai": "0.87.1"
+  },
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "deploy": "node scripts/deploy.mjs",
+    "rollback": "node scripts/rollback.mjs",
+    "setup": "node scripts/setup.mjs",
+    "test": "node --test"
+  },
+  "keywords": [
+    "pi",
+    "compaction",
+    "omniroute",
+    "herdr"
+  ],
+  "author": "Wilkin",
+  "license": "UNLICENSED"
+}

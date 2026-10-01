@@ -1,0 +1,27 @@
+# Dependencies are installed from the committed lockfile.
+node_modules/
+
+# Local credentials, agent state, and runtime evidence (not synthetic test fixtures).
+.env
+.env.*
+.pi/
+auth.json
+models.json
+settings.json
+sessions/
+telemetry/
+*.jsonl
+*.log
+backups/
+journals/
+manifest.json
+baseline*.json
+*journal*.json
+*.bak
+
+# Synthetic, committed fixtures are not live agent state.
+!test/fixtures/**
+
+# Keep reproducible dependencies and repository evidence versionable.
+!package-lock.json
+!repository-evidence.md
