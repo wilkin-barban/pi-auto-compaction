@@ -10,6 +10,7 @@ import {
   validateManifest,
 } from "../src/install-state.mjs";
 import { DEFAULT_CONFIG } from "../src/config.mjs";
+import { resolveSummarizerSettings } from "../src/summarizer-settings.mjs";
 
 export const MARKER_FILENAME = ".pi-auto-compaction-deploy.json";
 const PI_DEFAULT_RESERVE_TOKENS = 16384;
@@ -166,6 +167,76 @@ function analyzeModel(modelKey, settings, manifest, agentDir) {
     triggerPercent,
     isManaged,
     warnings,
+  };
+}
+
+const SUMMARIZER_CATALOGS = ["models.json", "models-store.json", "commandcode-models.json"];
+const SMALL_CONTEXT_WINDOW = 32000;
+
+function findCatalogModel(agentDir, provider, modelId) {
+  for (const name of SUMMARIZER_CATALOGS) {
+    const file = path.join(agentDir, name);
+    let parsed;
+    try {
+      if (!fs.existsSync(file)) continue;
+      parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch {
+      continue;
+    }
+
+    const stack = [parsed];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (!node || typeof node !== "object") continue;
+      if (Array.isArray(node)) {
+        stack.push(...node);
+        continue;
+      }
+      const id = node.id ?? node.modelId ?? node.model;
+      const entryProvider = node.provider ?? node.providerId;
+      if (id === modelId && (entryProvider === undefined || entryProvider === provider)) {
+        return {
+          catalog: name,
+          contextWindow: typeof node.contextWindow === "number" ? node.contextWindow : null,
+          maxTokens: typeof node.maxTokens === "number" ? node.maxTokens : null,
+        };
+      }
+      for (const value of Object.values(node)) {
+        if (value && typeof value === "object") stack.push(value);
+      }
+    }
+  }
+  return null;
+}
+
+function describeSummarizerSlot(agentDir, slot, source, warnings) {
+  if (!slot) {
+    return { provider: null, modelId: null, source, catalog: null, contextWindow: null, maxTokens: null };
+  }
+
+  const found = findCatalogModel(agentDir, slot.provider, slot.modelId);
+  const label = `${slot.provider}/${slot.modelId}`;
+
+  if (!found) {
+    warnings.push(
+      `Summarizer model "${label}" was not found in ${SUMMARIZER_CATALOGS.join(", ")} under ${agentDir}`,
+    );
+  }
+
+  const contextWindow = found?.contextWindow ?? null;
+  if (typeof contextWindow === "number" && contextWindow > 0 && contextWindow < SMALL_CONTEXT_WINDOW) {
+    warnings.push(
+      `Summarizer model "${label}" has a small context window (${contextWindow} tokens); long sessions will fall back`,
+    );
+  }
+
+  return {
+    provider: slot.provider,
+    modelId: slot.modelId,
+    source,
+    catalog: found?.catalog ?? null,
+    contextWindow,
+    maxTokens: found?.maxTokens ?? null,
   };
 }
 
@@ -406,6 +477,41 @@ export function runDoctor(options = {}, dependencies = {}) {
 
   // Model diagnostics
   const models = [];
+// Summarizer configuration (/compaction or settings file)
+let summarizer;
+try {
+  const resolved = resolveSummarizerSettings({
+    settingsPath: options.settingsPath,
+    agentDir,
+    env: envDep,
+  });
+  const settingsFile = resolved.path;
+  const exists = fsDep.existsSync(settingsFile);
+  const slotWarnings = [];
+  const primary = describeSummarizerSlot(agentDir, resolved.primaryModel, resolved.sourcePrimary, slotWarnings);
+  const fallback = describeSummarizerSlot(agentDir, resolved.fallbackModel, resolved.sourceFallback, slotWarnings);
+
+  const fileWarnings = [...resolved.warnings];
+  if (resolved.sourcePrimary === "default" && resolved.sourceFallback === "default") {
+    // Defaults are informational: never fail a healthy installation for them.
+    slotWarnings.length = 0;
+  }
+  warnings.push(...fileWarnings, ...slotWarnings);
+
+  summarizer = {
+    path: settingsFile,
+    exists,
+    valid: fileWarnings.length === 0,
+    primary,
+    fallback,
+    source: resolved.source,
+    warnings: [...fileWarnings, ...slotWarnings],
+  };
+} catch (err) {
+  warnings.push(`Failed to resolve summarizer settings: ${err.message}`);
+  summarizer = { path: null, exists: false, valid: false, primary: null, fallback: null, source: "unknown", warnings: [err.message] };
+}
+
   if (options.model) {
     const analysis = analyzeModel(options.model, settings, manifest, agentDir);
     models.push(analysis);
@@ -450,6 +556,7 @@ export function runDoctor(options = {}, dependencies = {}) {
     marker: markerState,
     release: releaseState,
     telemetry: telemetryState,
+    summarizer,
     warnings,
     errors,
   };
@@ -504,6 +611,24 @@ function formatReport(result) {
     lines.push(`  Tokens before:    ${result.telemetry.lastRecord.tokensBefore ?? "unknown"}`);
   }
   lines.push("");
+
+  if (result.summarizer) {
+    lines.push("Summarizer:");
+    lines.push(`  Settings file:    ${result.summarizer.path ?? "n/a"}`);
+    lines.push(`  File exists:      ${result.summarizer.exists ? "yes" : "no"}`);
+    lines.push(`  File valid:       ${result.summarizer.valid ? "yes" : "no"}`);
+    lines.push(`  Source:           ${result.summarizer.source}`);
+    for (const [label, slot] of [["Primary", result.summarizer.primary], ["Fallback", result.summarizer.fallback]]) {
+      if (!slot) {
+        lines.push(`  ${label}:          n/a`);
+        continue;
+      }
+      const ctx = slot.contextWindow === null ? "unresolved" : slot.contextWindow.toLocaleString();
+      const max = slot.maxTokens === null ? "unresolved" : slot.maxTokens.toLocaleString();
+      lines.push(`  ${label}:          ${slot.provider}/${slot.modelId} (${slot.source}, ${slot.catalog ?? "no catalog entry"}, ctx ${ctx}, max ${max})`);
+    }
+    lines.push("");
+  }
 
   if (result.model) {
     lines.push("Selected Model Diagnostics:");

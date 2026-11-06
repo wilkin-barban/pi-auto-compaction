@@ -552,4 +552,124 @@ describe("doctor module", () => {
       fs.rmSync(deployHome, { recursive: true, force: true });
     }
   });
+  describe("summarizer section", () => {
+    const summarizerPath = () => path.join(agentDir, ".pi-auto-compaction-settings.json");
+
+    function writeSummarizer(settings) {
+      fs.writeFileSync(summarizerPath(), JSON.stringify(settings, null, 2), { mode: 0o600 });
+    }
+
+    function baseOptions() {
+      return { agentDir, installDir, telemetryPath: telemetryFile };
+    }
+
+    it("reports defaults with no settings file", () => {
+      const result = runDoctor(baseOptions());
+
+      assert.equal(result.summarizer.exists, false);
+      assert.equal(result.summarizer.valid, true);
+      assert.equal(result.summarizer.source, "default");
+      assert.deepEqual(
+        { provider: result.summarizer.primary.provider, modelId: result.summarizer.primary.modelId },
+        { provider: "omniroute", modelId: "antigravity/gemini-3.8-flash-tiered" },
+      );
+      assert.deepEqual(result.summarizer.warnings, []);
+    });
+
+    it("reports the configured models with their origin and catalog data", () => {
+      fs.writeFileSync(
+        path.join(agentDir, "models.json"),
+        JSON.stringify({
+          providers: {
+            antigravity: {
+              models: [
+                { id: "gemini-3.8-flash-tiered", contextWindow: 1048576, maxTokens: 65536 },
+                { id: "gemini-3.6-flash-high", contextWindow: 1048576, maxTokens: 65536 },
+              ],
+            },
+          },
+        }),
+      );
+      writeSummarizer({
+        version: 1,
+        primary: { provider: "antigravity", modelId: "gemini-3.8-flash-tiered" },
+        fallback: { provider: "antigravity", modelId: "gemini-3.6-flash-high" },
+      });
+
+      const result = runDoctor(baseOptions());
+
+      assert.equal(result.summarizer.exists, true);
+      assert.equal(result.summarizer.valid, true);
+      assert.equal(result.summarizer.source, "file");
+      assert.equal(result.summarizer.primary.source, "file");
+      assert.equal(result.summarizer.primary.catalog, "models.json");
+      assert.equal(result.summarizer.primary.contextWindow, 1048576);
+      assert.equal(result.summarizer.primary.maxTokens, 65536);
+      assert.equal(result.summarizer.fallback.modelId, "gemini-3.6-flash-high");
+      assert.deepEqual(result.summarizer.warnings, []);
+    });
+
+    it("warns about a corrupt settings file without throwing", () => {
+      fs.writeFileSync(summarizerPath(), "{ roto", { mode: 0o600 });
+
+      const result = runDoctor(baseOptions());
+
+      assert.equal(result.summarizer.valid, false);
+      assert.equal(result.summarizer.source, "default");
+      assert.ok(
+        result.summarizer.warnings.some((warning) => /Failed to load summarizer settings/.test(warning)),
+      );
+      assert.equal(result.exitCode, 1);
+    });
+
+    it("warns when a configured model is absent from every catalog", () => {
+      writeSummarizer({ version: 1, primary: { provider: "ghost", modelId: "ghost-model" } });
+
+      const result = runDoctor(baseOptions());
+
+      assert.ok(result.summarizer.warnings.some((warning) => /was not found in/.test(warning)));
+      assert.equal(result.exitCode, 1);
+    });
+
+    it("warns about a small context window", () => {
+      fs.writeFileSync(
+        path.join(agentDir, "models.json"),
+        JSON.stringify({ providers: { local: { models: [{ id: "tiny", contextWindow: 16384 }] } } }),
+      );
+      writeSummarizer({
+        version: 1,
+        primary: { provider: "local", modelId: "tiny" },
+        fallback: { provider: "local", modelId: "tiny-backup" },
+      });
+
+      const result = runDoctor(baseOptions());
+
+      assert.ok(result.summarizer.warnings.some((warning) => /small context window/.test(warning)));
+    });
+
+    it("reports an env override as the effective origin", () => {
+      const result = runDoctor(baseOptions(), {
+        env: {
+          PI_AUTO_COMPACTION_PRIMARY_PROVIDER: "commandcode",
+          PI_AUTO_COMPACTION_PRIMARY_MODEL: "deepseek/deepseek-v4.1-flash",
+        },
+      });
+
+      assert.equal(result.summarizer.primary.source, "env");
+      assert.equal(result.summarizer.primary.modelId, "deepseek/deepseek-v4.1-flash");
+    });
+
+    it("stays read-only with a valid settings file", () => {
+      writeSummarizer({
+        version: 1,
+        primary: { provider: "antigravity", modelId: "gemini-3.8-flash-tiered" },
+      });
+
+      const before = captureTreeSnapshot(agentDir);
+      runDoctor(baseOptions());
+      const after = captureTreeSnapshot(agentDir);
+
+      assert.deepEqual(after, before);
+    });
+  });
 });
