@@ -11,6 +11,8 @@ import {
   MANAGED_MODELS,
   EXPECTED_MANAGED_VALUES,
   EXPECTED_MANIFEST_VERSION,
+  hashContent,
+  parseAndValidateReceipt,
 } from "../../src/install-state.mjs";
 
 describe("deployment scripts module", () => {
@@ -1193,4 +1195,243 @@ describe("deployment scripts module", () => {
     // Lock must still be released
     assert.equal(fs.existsSync(lockPath), false, "Lock must be released");
   });
+
+  it("setup computes trusted writer receipt before writes matching exact in-memory serialized hashes", () => {
+    const result = runSetup({
+      agentDir: targetAgentDir,
+      packageSourceDir: mockPkgSourceDir,
+      receiptNonce: "nonce-12345",
+    });
+
+    assert.ok(result.receipt, "Setup result must expose receipt");
+    assert.equal(result.receipt.nonce, "nonce-12345");
+    assert.equal(result.receipt.targetDir, targetAgentDir);
+    assert.equal(result.receipt.packageSourceDir, mockPkgSourceDir);
+
+    const manifestFile = path.join(targetAgentDir, ".pi-auto-compaction-manifest.json");
+    const loaderFile = path.join(targetAgentDir, "extensions", "omniroute-compaction.ts");
+
+    const manifestBytes = fs.readFileSync(manifestFile, "utf-8");
+    const loaderBytes = fs.readFileSync(loaderFile, "utf-8");
+    const settingsBytes = fs.readFileSync(settingsFile, "utf-8");
+
+    assert.equal(result.receipt.manifestHash, hashContent(manifestBytes));
+    assert.equal(result.receipt.loaderHash, hashContent(loaderBytes));
+    assert.equal(result.receipt.settingsHash, hashContent(settingsBytes));
+    assert.equal(result.receipt.installedAt, JSON.parse(manifestBytes).installedAt);
+  });
+
+  it("onReceipt prewrite hook receives sealed receipt before any file or journal writes", () => {
+    let capturedReceipt = null;
+    let manifestExistedAtReceipt = null;
+    let journalExistedAtReceipt = null;
+
+    runSetup({
+      agentDir: targetAgentDir,
+      packageSourceDir: mockPkgSourceDir,
+      receiptNonce: "nonce-prewrite-hook",
+      onReceipt: (receipt) => {
+        capturedReceipt = receipt;
+        const manifestFile = path.join(targetAgentDir, ".pi-auto-compaction-manifest.json");
+        const journalFile = path.join(targetAgentDir, ".pi-auto-compaction-state", "recovery-journal.json");
+        manifestExistedAtReceipt = fs.existsSync(manifestFile);
+        journalExistedAtReceipt = fs.existsSync(journalFile);
+      },
+    });
+
+    assert.ok(capturedReceipt, "onReceipt must be invoked with sealed receipt");
+    assert.equal(capturedReceipt.nonce, "nonce-prewrite-hook");
+    assert.equal(manifestExistedAtReceipt, false, "Manifest must not exist when onReceipt is invoked");
+    assert.equal(journalExistedAtReceipt, false, "Journal must not exist when onReceipt is invoked");
+  });
+
+  it("setup.mjs CLI with --receipt-nonce emits delimited receipt to stdout before writes and remains backwards compatible without flag", async () => {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+    const setupScript = path.resolve("scripts/setup.mjs");
+
+    const resWithNonce = await execFileAsync(process.execPath, [
+      setupScript,
+      "--target-dir",
+      targetAgentDir,
+      "--source-dir",
+      mockPkgSourceDir,
+      "--receipt-nonce",
+      "cli-nonce-test",
+    ]);
+
+    assert.ok(
+      resWithNonce.stdout.includes("---PI_AUTO_COMPACTION_SETUP_RECEIPT_START---"),
+      "Stdout must include setup receipt start delimiter",
+    );
+    assert.ok(
+      resWithNonce.stdout.includes("---PI_AUTO_COMPACTION_SETUP_RECEIPT_END---"),
+      "Stdout must include setup receipt end delimiter",
+    );
+
+    const parsed = parseAndValidateReceipt(resWithNonce.stdout, {
+      nonce: "cli-nonce-test",
+      targetDir: targetAgentDir,
+      packageSourceDir: mockPkgSourceDir,
+    });
+    assert.ok(parsed, "Parsed receipt must be valid");
+    assert.equal(parsed.nonce, "cli-nonce-test");
+
+    // Clean agent dir for backward compatibility test
+    fs.rmSync(targetAgentDir, { recursive: true, force: true });
+    fs.mkdirSync(targetAgentDir, { recursive: true });
+    fs.writeFileSync(settingsFile, JSON.stringify({ compaction: { enabled: true } }));
+
+    const resWithoutNonce = await execFileAsync(process.execPath, [
+      setupScript,
+      "--target-dir",
+      targetAgentDir,
+      "--source-dir",
+      mockPkgSourceDir,
+    ]);
+
+    assert.ok(
+      !resWithoutNonce.stdout.includes("---PI_AUTO_COMPACTION_SETUP_RECEIPT_START---"),
+      "Stdout without --receipt-nonce must not include receipt delimiter",
+    );
+    assert.ok(
+      resWithoutNonce.stdout.includes("Setup completed successfully"),
+      "Setup without --receipt-nonce must complete successfully",
+    );
+  });
+
+  it("setup.mjs CLI fails when --receipt-nonce is missing a required value", async () => {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+    const setupScript = path.resolve("scripts/setup.mjs");
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [setupScript, "--receipt-nonce"]),
+      /Missing value for --receipt-nonce/,
+    );
+  });
+
+  it("receipt hashes reflect intended in-memory bytes, unaffected by concurrent disk mutation between receipt and commit", () => {
+    let receiptAtHook = null;
+    let settingsBeforeCommit = null;
+    let settingsAfterMutation = null;
+
+    // Use beforeCommit to mutate settings AFTER receipt has been sealed and emitted
+    // but BEFORE CAS verify runs. This should cause CAS to reject (Conflict),
+    // but the receipt captured by onReceipt must still have the INTENDED hash.
+    assert.throws(
+      () =>
+        runSetup({
+          agentDir: targetAgentDir,
+          packageSourceDir: mockPkgSourceDir,
+          receiptNonce: "nonce-inmemory-proof",
+          onReceipt: (receipt) => {
+            receiptAtHook = receipt;
+            // At this point: receipt is sealed, NO manifest/journal on disk yet
+            settingsBeforeCommit = fs.existsSync(settingsFile)
+              ? fs.readFileSync(settingsFile, "utf-8")
+              : null;
+          },
+          beforeCommit: () => {
+            // Mutate settings on disk AFTER receipt was sealed
+            fs.writeFileSync(
+              settingsFile,
+              JSON.stringify({ concurrentMutation: true, tampered: Date.now() }),
+            );
+            settingsAfterMutation = fs.readFileSync(settingsFile, "utf-8");
+          },
+        }),
+      /concurrent|conflict/i,
+    );
+
+    // Receipt MUST have been captured before disk mutation
+    assert.ok(receiptAtHook, "onReceipt must have been invoked before beforeCommit");
+    assert.equal(receiptAtHook.nonce, "nonce-inmemory-proof");
+
+    // Receipt settingsHash must match the INTENDED in-memory bytes, NOT the mutated disk
+    assert.notEqual(settingsBeforeCommit, settingsAfterMutation);
+    assert.notEqual(
+      receiptAtHook.settingsHash,
+      hashContent(settingsAfterMutation),
+      "Receipt must NOT reflect concurrent disk mutation",
+    );
+
+    // Receipt's three hashes must be valid 64-hex strings computed from in-memory serialization
+    for (const field of ["manifestHash", "loaderHash", "settingsHash"]) {
+      assert.match(receiptAtHook[field], /^[0-9a-f]{64}$/, `Receipt ${field} must be valid SHA-256 hex`);
+    }
+  });
+
+  it("failed setup CLI emits receipt to stdout with strict nonce before the failure, recoverable by deploy receipt parser", async () => {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+
+    // Create a fresh agent dir for injection test
+    const freshAgent = path.join(tempHome, "fresh-agent-for-failure");
+    fs.mkdirSync(freshAgent, { recursive: true });
+    fs.writeFileSync(
+      path.join(freshAgent, "settings.json"),
+      JSON.stringify({ compaction: { enabled: true } }),
+    );
+
+    // Build setup script inline that uses _testInjectFailureAt to fail at loader write
+    // This causes the child to throw AFTER receipt is emitted but DURING writes
+    const setupScript = path.resolve("scripts/setup.mjs");
+    const inlineCode = `import { runSetup } from ${JSON.stringify(new URL("file://" + setupScript).href)};
+      runSetup(${JSON.stringify({
+        agentDir: freshAgent,
+        packageSourceDir: mockPkgSourceDir,
+        receiptNonce: "nonce-failure-recovery",
+        _testInjectFailureAt: "at-loader-write",
+      })});`;
+
+    let childResult;
+    try {
+      await execFileAsync(process.execPath, ["--input-type=module", "-e", inlineCode]);
+      assert.fail("Child should have failed");
+    } catch (err) {
+      childResult = err;
+    }
+
+    // Child MUST have failed
+    assert.ok(childResult, "Child must have thrown");
+
+    // Stdout should contain the receipt delimiters because receipt is emitted BEFORE writes
+    const stdout = childResult.stdout || "";
+    assert.ok(
+      stdout.includes("---PI_AUTO_COMPACTION_SETUP_RECEIPT_START---"),
+      "Failed child stdout must include receipt start delimiter",
+    );
+    assert.ok(
+      stdout.includes("---PI_AUTO_COMPACTION_SETUP_RECEIPT_END---"),
+      "Failed child stdout must include receipt end delimiter",
+    );
+
+    // Parse and validate the receipt from the failed child's stdout
+    const recovered = parseAndValidateReceipt(stdout, {
+      nonce: "nonce-failure-recovery",
+      targetDir: freshAgent,
+      packageSourceDir: mockPkgSourceDir,
+    });
+
+    assert.ok(recovered, "Receipt must be recoverable from failed child stdout");
+    assert.equal(recovered.nonce, "nonce-failure-recovery");
+    assert.equal(recovered.targetDir, freshAgent);
+    assert.equal(recovered.packageSourceDir, mockPkgSourceDir);
+
+    // All three hashes must be valid 64-hex SHA-256
+    for (const field of ["manifestHash", "loaderHash", "settingsHash"]) {
+      assert.match(recovered[field], /^[0-9a-f]{64}$/, `Recovered receipt ${field} must be valid SHA-256 hex`);
+    }
+
+    // Strict nonce: different nonce must fail
+    assert.throws(
+      () => parseAndValidateReceipt(stdout, { nonce: "wrong-nonce" }),
+      /nonce mismatch/i,
+    );
+  });
 });
+

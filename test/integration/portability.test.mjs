@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -47,9 +47,25 @@ test("local development SDK wins even when no home installation is available", (
   assert.equal(result.status, 0, result.stderr);
 });
 
-function syntheticInstallation() {
+const trackedPortabilityRoots = new Set();
+
+afterEach(() => {
+  for (const root of trackedPortabilityRoots) {
+    try { fs.rmSync(root, { recursive: true, force: true }); } catch {}
+    trackedPortabilityRoots.delete(root);
+  }
+});
+
+function syntheticInstallation(t) {
   // All generated package fixtures stay inside the ignored project dependencies.
   const root = fs.mkdtempSync(new URL("../../node_modules/.pi-portability-", import.meta.url));
+  trackedPortabilityRoots.add(root);
+  if (t?.after) {
+    t.after(() => {
+      trackedPortabilityRoots.delete(root);
+      try { fs.rmSync(root, { recursive: true, force: true }); } catch {}
+    });
+  }
   const globalRoot = path.join(root, ".local", "lib", "node_modules");
   const sdkRoot = path.join(globalRoot, "@earendil-works", "pi-coding-agent");
   const aiRoot = path.join(sdkRoot, "node_modules", "@earendil-works", "pi-ai");
@@ -81,8 +97,8 @@ function checkSyntheticSelection(prefix, options = {}) {
   `], { env: options.env ?? process.env, encoding: "utf8" });
 }
 
-test("explicit SDK directory and file URL select its AI dependency through package exports", () => {
-  const { sdkRoot } = syntheticInstallation();
+test("explicit SDK directory and file URL select its AI dependency through package exports", (t) => {
+  const { sdkRoot } = syntheticInstallation(t);
   for (const override of [sdkRoot, pathToFileURL(path.join(sdkRoot, "public-entry.mjs")).href]) {
     const result = checkSyntheticSelection("", {
       env: { ...process.env, PI_CODING_AGENT_PATH: override },
@@ -91,8 +107,8 @@ test("explicit SDK directory and file URL select its AI dependency through packa
   }
 });
 
-test("standard home fallback works without local SDK resolution or assumed dist exports", () => {
-  const { root } = syntheticInstallation();
+test("standard home fallback works without local SDK resolution or assumed dist exports", (t) => {
+  const { root } = syntheticInstallation(t);
   const loader = path.join(root, "missing-local-sdk.mjs");
   fs.writeFileSync(loader, `
     export async function resolve(specifier, context, nextResolve) {
@@ -110,4 +126,17 @@ test("standard home fallback works without local SDK resolution or assumed dist 
     delete process.env.PI_CODING_AGENT_PATH;
   `, { flags: ["--experimental-loader", pathToFileURL(loader).href] });
   assert.equal(result.status, 0, result.stderr);
+});
+
+test("fixture teardown removes exact created portability directory", () => {
+  let createdRoot;
+  const cleanupHooks = [];
+  const fakeContext = {
+    after(fn) { cleanupHooks.push(fn); },
+  };
+  const { root } = syntheticInstallation(fakeContext);
+  createdRoot = root;
+  assert.ok(fs.existsSync(createdRoot), "fixture directory must exist before teardown");
+  for (const hook of cleanupHooks) hook();
+  assert.equal(fs.existsSync(createdRoot), false, "fixture directory must be removed by teardown");
 });
