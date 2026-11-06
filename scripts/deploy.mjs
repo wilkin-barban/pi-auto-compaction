@@ -5,8 +5,10 @@ import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
+  MANAGED_MODELS, EXPECTED_MANAGED_VALUES, EXPECTED_MANIFEST_VERSION,
   MANIFEST_FILENAME, STATE_DIRNAME, JOURNAL_FILENAME, LOCK_FILENAME,
   validateManifest, validateSettings, checkDriftOnReinstall,
+  parseAndValidateReceipt,
 } from "../src/install-state.mjs";
 
 export const MARKER_FILENAME = ".pi-auto-compaction-deploy.json";
@@ -36,6 +38,88 @@ function owned(file, directory = false) {
 function exact(object, keys, label) {
   if (!object || Array.isArray(object) || typeof object !== "object" ||
       Object.keys(object).sort().join() !== [...keys].sort().join()) fail(`Invalid ${label} schema`);
+}
+function expectedLoader(targetPath) {
+  const entrySpecifier = JSON.stringify(path.join(targetPath, "index.mjs"));
+  return `// Managed loader for pi-auto-compaction
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default async function (pi: ExtensionAPI) {
+  try {
+    const ext = await import(${entrySpecifier});
+    const factory = ext.default || ext.autoCompactionExtension;
+    if (typeof factory === "function") {
+      factory(pi);
+    }
+  } catch (err) {
+    console.error("[pi-auto-compaction] Failed to load durable extension:", err);
+  }
+}
+`;
+}
+function expectedSettings(beforeSettings) {
+  if (!beforeSettings) return null;
+  const currentCompaction = beforeSettings.compaction || {};
+  const currentOverrides = currentCompaction.modelOverrides || {};
+  const updatedOverrides = { ...currentOverrides };
+  for (const modelId of MANAGED_MODELS) {
+    const existingModelObj = updatedOverrides[modelId] || {};
+    updatedOverrides[modelId] = {
+      ...existingModelObj,
+      ...EXPECTED_MANAGED_VALUES,
+    };
+  }
+  return {
+    ...beforeSettings,
+    compaction: {
+      ...currentCompaction,
+      modelOverrides: updatedOverrides,
+    },
+  };
+}
+function isOwnManifest(liveManifest, targetPath, expectedLoaderPath, expectedOriginalOverrides, agentDir, setupStartTime) {
+  if (!liveManifest || typeof liveManifest !== "object" || Array.isArray(liveManifest)) return false;
+  const expectedKeys = [
+    "expectedManagedValues",
+    "installedAt",
+    "loaderHash",
+    "loaderPath",
+    "managedModels",
+    "originalOverrides",
+    "packageSourceDir",
+    "version",
+  ];
+  if (Object.keys(liveManifest).sort().join() !== expectedKeys.sort().join()) return false;
+  if (liveManifest.version !== EXPECTED_MANIFEST_VERSION) return false;
+  if (liveManifest.packageSourceDir !== targetPath) return false;
+  if (liveManifest.loaderPath !== expectedLoaderPath) return false;
+  if (liveManifest.loaderHash !== hash(expectedLoader(targetPath))) return false;
+  if (JSON.stringify(liveManifest.managedModels) !== JSON.stringify([...MANAGED_MODELS])) return false;
+  if (JSON.stringify(liveManifest.expectedManagedValues) !== JSON.stringify(EXPECTED_MANAGED_VALUES)) return false;
+  if (expectedOriginalOverrides && JSON.stringify(liveManifest.originalOverrides) !== JSON.stringify(expectedOriginalOverrides)) return false;
+  if (typeof liveManifest.installedAt !== "string" || isNaN(Date.parse(liveManifest.installedAt))) return false;
+
+  const parsedInstalledAt = Date.parse(liveManifest.installedAt);
+  if (parsedInstalledAt > Date.now()) return false;
+  if (setupStartTime && parsedInstalledAt < setupStartTime - 50) return false;
+
+  if (agentDir) {
+    const manifestPath = path.join(agentDir, MANIFEST_FILENAME);
+    if (exists(manifestPath)) {
+      const stat = fs.statSync(manifestPath);
+      if (parsedInstalledAt > stat.mtimeMs + 5 || Math.abs(stat.mtimeMs - parsedInstalledAt) > 100) return false;
+    }
+    const stateDir = path.join(agentDir, STATE_DIRNAME);
+    if (exists(stateDir)) {
+      const backups = fs.readdirSync(stateDir).filter((f) => /^settings\.bak\.\d+$/.test(f));
+      const matching = backups.map((f) => Number(f.slice("settings.bak.".length))).filter((ts) => ts >= (setupStartTime ? setupStartTime - 100 : 0));
+      if (matching.length > 0) {
+        const closest = Math.min(...matching.map((ts) => Math.abs(parsedInstalledAt - ts)));
+        if (closest > 50) return false;
+      }
+    }
+  }
+  return true;
 }
 function atomicJSON(file, value) {
   safePath(file);
@@ -134,7 +218,7 @@ function validateMarker(marker, root, agent) {
   if (marker.state !== "ready" || marker.pending !== null || (!marker.current && marker.previous) ||
       (marker.previous && marker.current.hash === marker.previous.hash)) fail("Invalid deployment metadata state");
 }
-function agentState(agent, current) {
+function agentState(agent, current, options = {}) {
   const loader = path.join(agent, "extensions", "omniroute-compaction.ts");
   const manifestPath = path.join(agent, MANIFEST_FILENAME);
   for (const file of [agent, loader, manifestPath, path.join(agent, "settings.json"),
@@ -151,6 +235,33 @@ function agentState(agent, current) {
   validateSettings(settings);
   if (settings.compaction?.enabled === false) fail("Compaction is disabled; setup refused");
   if (!current) {
+    if (options.adoptAgent) {
+      if (!exists(manifestPath) || !exists(loader)) fail("Adoption requires an existing valid agent manifest and loader");
+      owned(manifestPath);
+      owned(loader);
+      const manifest = readJSON(manifestPath);
+      validateManifest(manifest, "agent manifest", loader);
+      exact(manifest, [
+        "expectedManagedValues",
+        "installedAt",
+        "loaderHash",
+        "loaderPath",
+        "managedModels",
+        "originalOverrides",
+        "packageSourceDir",
+        "version",
+      ], "agent manifest");
+      const oldSource = safePath(manifest.packageSourceDir);
+      owned(oldSource, true);
+      owned(path.join(oldSource, "index.mjs"));
+      owned(path.join(oldSource, "package.json"));
+      const oldMeta = readJSON(path.join(oldSource, "package.json"));
+      if (oldMeta.name !== "pi-auto-compaction" || oldMeta.type !== "module") fail("Invalid package metadata in adopted source");
+      owned(path.join(oldSource, "scripts", "setup.mjs"));
+      owned(path.join(oldSource, "scripts", "rollback.mjs"));
+      checkDriftOnReinstall(settings, manifest, loader);
+      return manifest;
+    }
     if (exists(manifestPath) || exists(loader)) fail("Foreign agent manifest/loader: ownership refused");
     return null;
   }
@@ -158,6 +269,16 @@ function agentState(agent, current) {
   owned(loader);
   const manifest = readJSON(manifestPath);
   validateManifest(manifest, "agent manifest", loader);
+  exact(manifest, [
+    "expectedManagedValues",
+    "installedAt",
+    "loaderHash",
+    "loaderPath",
+    "managedModels",
+    "originalOverrides",
+    "packageSourceDir",
+    "version",
+  ], "agent manifest");
   if (manifest.packageSourceDir !== current.path) fail("Agent manifest source ownership mismatch");
   checkDriftOnReinstall(settings, manifest, loader);
   return manifest;
@@ -169,16 +290,25 @@ function snapshot(agent) {
     return exists(file) ? fs.readFileSync(file, "utf8") : null;
   });
 }
-function childSetup(release, agent, run, rollback = false) {
+function childSetup(release, agent, run, rollback = false, receiptNonce = null) {
   const script = path.join(release.path, "scripts", rollback ? "rollback.mjs" : "setup.mjs");
   const args = [script, "--target-dir", agent];
-  if (!rollback) args.push("--source-dir", release.path);
+  if (!rollback) {
+    args.push("--source-dir", release.path);
+    if (receiptNonce) args.push("--receipt-nonce", receiptNonce);
+  }
   const result = run(process.execPath, args, { encoding: "utf8", env: {}, cwd: release.path });
-  if (result.error || result.status !== 0) fail(`Official ${rollback ? "rollback" : "setup"} failed: ${result.stderr || result.error || result.status}`);
+  if (result.error || result.status !== 0) {
+    const error = new Error(`Official ${rollback ? "rollback" : "setup"} failed: ${result.stderr || result.error || result.status}`);
+    error.childResult = result;
+    throw error;
+  }
+  return result;
 }
 
 export function runDeploy(options = {}, dependencies = {}) {
-  if (options.update && options.rollbackSource) fail("Update and rollback-source are mutually exclusive");
+  const modes = [options.update, options.rollbackSource, options.adoptAgent].filter(Boolean);
+  if (modes.length > 1) fail("Update, rollback-source, and adopt-agent are mutually exclusive");
   const root = safePath(options.installDir || path.join(os.homedir(), ".local", "share", "pi-auto-compaction"));
   const agent = safePath(options.agentDir || process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent"));
   const source = safePath(options.sourceDir || sourceDefault);
@@ -195,6 +325,7 @@ export function runDeploy(options = {}, dependencies = {}) {
     owned(markerPath);
     prior = readJSON(markerPath);
     validateMarker(prior, root, agent);
+    if (options.adoptAgent) fail("Adoption requires a new, non-existent install root");
     if (exists(lock)) fail("Deployment lock active: manual reconciliation required");
     for (const dir of ["releases", "journals"]) {
       safePath(path.join(root, dir));
@@ -206,15 +337,22 @@ export function runDeploy(options = {}, dependencies = {}) {
     prior = { kind: "pi-auto-compaction-deploy", version: 1, installDir: root, agentDir: agent,
       state: "ready", current: null, previous: null, pending: null };
   }
-  if (!options.update && !options.rollbackSource && prior.current) fail("Managed install already exists; use --update");
+  if (!options.update && !options.rollbackSource && !options.adoptAgent && prior.current) fail("Managed install already exists; use --update");
   if (options.update && !prior.current) fail("Update requires a current managed release");
-  const original = agentState(agent, prior.current);
+  const original = agentState(agent, prior.current, { adoptAgent: Boolean(options.adoptAgent) });
+  if (options.adoptAgent && original?.packageSourceDir) {
+    const oldSource = safePath(original.packageSourceDir);
+    if (oldSource === path.parse(oldSource).root || oldSource === os.homedir() ||
+        overlaps(root, oldSource) || overlaps(agent, oldSource) || overlaps(source, oldSource)) {
+      fail("Unsafe overlapping paths with adopted source");
+    }
+  }
   const copy = options.rollbackSource ? null : checkSource(source, run);
   const target = options.rollbackSource ? prior.previous || prior.current : descriptor(root, copy.hash);
   if (!target) fail("No managed release available for rollback");
   if (prior.current?.hash === target.hash) return { success: true, noop: true, dryRun: Boolean(options.dryRun), releaseDir: target.path };
   if (exists(target.path)) verifyRelease(target, root, run);
-  if (options.dryRun) return { success: true, dryRun: true, releaseDir: target.path };
+  if (options.dryRun) return { success: true, dryRun: true, releaseDir: target.path, adopted: Boolean(options.adoptAgent) };
 
   if (!exists(root)) {
     fs.mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -225,7 +363,7 @@ export function runDeploy(options = {}, dependencies = {}) {
   try {
     // Revalidate after acquiring the wrapper lock, before any release/agent writes.
     if (JSON.stringify(readJSON(markerPath)) !== JSON.stringify(prior)) fail("Deployment metadata changed concurrently");
-    agentState(agent, prior.current);
+    agentState(agent, prior.current, { adoptAgent: Boolean(options.adoptAgent) });
     fs.mkdirSync(path.join(root, "releases"), { recursive: true, mode: 0o700 });
     fs.mkdirSync(path.join(root, "journals"), { recursive: true, mode: 0o700 });
     if (!exists(target.path)) {
@@ -240,43 +378,237 @@ export function runDeploy(options = {}, dependencies = {}) {
     }
     verifyRelease(target, root, run);
     const before = snapshot(agent);
-    const pending = { ...prior, state: "pending", pending: { target, operation: options.rollbackSource ? "rollback-source" : "setup" } };
+    if (JSON.stringify(snapshot(agent)) !== JSON.stringify(before)) fail("Agent files modified concurrently before setup");
+    const pending = { ...prior, state: "pending", pending: { target, operation: options.rollbackSource ? "rollback-source" : options.adoptAgent ? "adopt-agent" : "setup" } };
     const journalPath = path.join(root, "journals", `${lockToken}.json`);
-    const journal = { version: 1, agentDir: agent, prior, target, state: "prepared" };
+    const journal = {
+      version: 1,
+      agentDir: agent,
+      prior,
+      target,
+      operation: options.rollbackSource ? "rollback-source" : options.adoptAgent ? "adopt-agent" : "setup",
+      adoptedSource: options.adoptAgent ? original.packageSourceDir : null,
+      state: "prepared"
+    };
     atomicJSON(journalPath, journal);
     atomicJSON(markerPath, pending);
-    const next = { ...prior, current: target, previous: options.rollbackSource ? null : prior.current };
+    const next = { ...prior, current: target, previous: (options.rollbackSource || options.adoptAgent) ? null : prior.current };
+    const setupReceiptNonce = crypto.randomUUID();
+    let validatedReceipt = null;
+    let expectedPostHashes = null;
+    let childError = null;
     try {
-      childSetup(target, agent, run);
+      let setupResult;
+      try {
+        setupResult = childSetup(target, agent, run, false, setupReceiptNonce);
+      } catch (err) {
+        childError = err;
+        if (err.childResult && typeof err.childResult.stdout === "string") {
+          try {
+            validatedReceipt = parseAndValidateReceipt(err.childResult.stdout, {
+              nonce: setupReceiptNonce,
+              targetDir: agent,
+              packageSourceDir: target.path,
+            });
+          } catch {}
+        }
+        throw err;
+      }
+
+      validatedReceipt = parseAndValidateReceipt(setupResult?.stdout, {
+        nonce: setupReceiptNonce,
+        targetDir: agent,
+        packageSourceDir: target.path,
+      });
+      if (!validatedReceipt) {
+        fail("Official setup did not emit a valid setup intent receipt");
+      }
+
+      expectedPostHashes = {
+        settings: validatedReceipt.settingsHash,
+        loader: validatedReceipt.loaderHash,
+        manifest: validatedReceipt.manifestHash,
+      };
+
+      // Verify all 3 files match exact receipt hashes on disk immediately after setup
+      const currentSnapshot = snapshot(agent);
+      const actualSettingsHash = hash(currentSnapshot[0] ?? "");
+      const actualManifestHash = hash(currentSnapshot[1] ?? "");
+      const actualLoaderHash = hash(currentSnapshot[2] ?? "");
+
+      if (
+        actualSettingsHash !== expectedPostHashes.settings ||
+        actualManifestHash !== expectedPostHashes.manifest ||
+        actualLoaderHash !== expectedPostHashes.loader
+      ) {
+        fail("Post-setup agent file hashes do not match trusted writer receipt");
+      }
+
       const installed = agentState(agent, target);
       if (original && JSON.stringify(installed.originalOverrides) !== JSON.stringify(original.originalOverrides)) fail("Setup changed original baseline");
+      const currentSettings = readJSON(path.join(agent, "settings.json"));
+      const beforeSettings = before[0] === null ? {} : JSON.parse(before[0]);
+      for (const [k, v] of Object.entries(beforeSettings)) {
+        if (k !== "compaction" && JSON.stringify(currentSettings[k]) !== JSON.stringify(v)) {
+          fail(`Setup modified unrelated setting ${k}`);
+        }
+      }
       atomicJSON(journalPath, { ...journal, state: "setup-complete" });
       (dependencies.commit || atomicJSON)(markerPath, next);
+
+      // Post-commit: check raw marker bytes first to reject unknown fields / format drift
+      const rawPostMarker = fs.readFileSync(markerPath, "utf8");
+      const expectedMarkerBytes = `${JSON.stringify(next, null, 2)}\n`;
+      if (rawPostMarker !== expectedMarkerBytes && rawPostMarker !== JSON.stringify(next, null, 2)) {
+        fail("Deployment marker drift detected during metadata publication");
+      }
+
+      // Post-commit: verify all 3 files still match exact receipt hashes
+      const postSnapshot = snapshot(agent);
+      if (
+        hash(postSnapshot[0] ?? "") !== expectedPostHashes.settings ||
+        hash(postSnapshot[1] ?? "") !== expectedPostHashes.manifest ||
+        hash(postSnapshot[2] ?? "") !== expectedPostHashes.loader
+      ) {
+        fail("Post-commit agent file hashes do not match trusted writer receipt");
+      }
+
+      const postMarker = readJSON(markerPath);
+      exact(postMarker, ["kind", "version", "installDir", "agentDir", "state", "current", "previous", "pending"], "deployment metadata");
+      validateMarker(postMarker, root, agent);
+
+      const postInstall = agentState(agent, target);
+      if (original && JSON.stringify(postInstall.originalOverrides) !== JSON.stringify(original.originalOverrides)) {
+        fail("Baseline drift detected during metadata publication");
+      }
+      if (before[0]) {
+        const postSettings = readJSON(path.join(agent, "settings.json"));
+        for (const [k, v] of Object.entries(beforeSettings)) {
+          if (k !== "compaction" && JSON.stringify(postSettings[k]) !== JSON.stringify(v)) {
+            fail(`Unrelated setting ${k} modified during metadata publication`);
+          }
+        }
+      }
     } catch (error) {
+      let markerIsOurs = false;
       try {
-        const liveMarker = readJSON(markerPath);
-        if (![JSON.stringify(pending), JSON.stringify(next)].includes(JSON.stringify(liveMarker))) fail("Metadata drift during compensation");
+        if (exists(markerPath)) {
+          const liveMarkerRaw = fs.readFileSync(markerPath, "utf8");
+          const expectedPending = JSON.stringify(pending, null, 2);
+          const expectedNext = JSON.stringify(next, null, 2);
+          if (
+            liveMarkerRaw === `${expectedPending}\n` ||
+            liveMarkerRaw === expectedPending ||
+            liveMarkerRaw === `${expectedNext}\n` ||
+            liveMarkerRaw === expectedNext
+          ) {
+            markerIsOurs = true;
+          }
+        }
         if (JSON.stringify(snapshot(agent)) !== JSON.stringify(before)) {
-          const installed = agentState(agent, target);
-          if (original && JSON.stringify(installed.originalOverrides) !== JSON.stringify(original.originalOverrides)) fail("Baseline drift during compensation");
           if (prior.current) {
+            const installed = agentState(agent, target);
+            if (original && JSON.stringify(installed.originalOverrides) !== JSON.stringify(original.originalOverrides)) fail("Baseline drift during compensation");
             verifyRelease(prior.current, root, run);
             childSetup(prior.current, agent, run);
             agentState(agent, prior.current);
+          } else if (options.adoptAgent) {
+            let compensationFailed = false;
+            const settingsPath = path.join(agent, "settings.json");
+            const manifestFilePath = path.join(agent, MANIFEST_FILENAME);
+            const loaderFilePath = path.join(agent, "extensions", "omniroute-compaction.ts");
+
+            // Compensate settings: must be before bytes or exact receipt settingsHash (or expectedSettings if no receipt)
+            if (exists(settingsPath)) {
+              const rawSettings = fs.readFileSync(settingsPath, "utf8");
+              if (before[0] !== null && rawSettings === before[0]) {
+                // Preserved pre-setup bytes
+              } else {
+                const currentSettingsHash = hash(rawSettings);
+                const isOurs = (validatedReceipt && currentSettingsHash === validatedReceipt.settingsHash) ||
+                  (!validatedReceipt && before[0] && (() => {
+                    let liveSettings = null;
+                    try { liveSettings = JSON.parse(rawSettings); } catch {}
+                    const expected = expectedSettings(JSON.parse(before[0]));
+                    return liveSettings && expected && JSON.stringify(liveSettings) === JSON.stringify(expected);
+                  })());
+                if (isOurs) {
+                  if (before[0] !== null) fs.writeFileSync(settingsPath, before[0], { mode: 0o600 });
+                  else fs.rmSync(settingsPath, { force: true });
+                } else {
+                  compensationFailed = true;
+                }
+              }
+            } else if (before[0] !== null) compensationFailed = true;
+
+            // Compensate loader: must be before bytes or exact expected loader / receipt loaderHash
+            if (exists(loaderFilePath)) {
+              const rawLoader = fs.readFileSync(loaderFilePath, "utf8");
+              if (before[2] !== null && rawLoader === before[2]) {
+                // Preserved pre-setup bytes
+              } else {
+                const currentLoaderHash = hash(rawLoader);
+                const isOurs = (validatedReceipt && currentLoaderHash === validatedReceipt.loaderHash) ||
+                  (!validatedReceipt && rawLoader === expectedLoader(target.path));
+                if (isOurs) {
+                  if (before[2] !== null) fs.writeFileSync(loaderFilePath, before[2], { mode: 0o600 });
+                  else fs.rmSync(loaderFilePath, { force: true });
+                } else {
+                  compensationFailed = true;
+                }
+              }
+            } else if (before[2] !== null) compensationFailed = true;
+
+            // Compensate manifest: ONLY exact trusted receipt manifestHash is owned!
+            if (exists(manifestFilePath)) {
+              const rawManifest = fs.readFileSync(manifestFilePath, "utf8");
+              let isBefore = false;
+              if (before[1] !== null) {
+                isBefore = rawManifest === before[1];
+              }
+              if (isBefore) {
+                // Preserved pre-setup bytes
+              } else {
+                const currentManifestHash = hash(rawManifest);
+                const isOurs = Boolean(validatedReceipt && currentManifestHash === validatedReceipt.manifestHash);
+                if (isOurs) {
+                  if (before[1] !== null) fs.writeFileSync(manifestFilePath, before[1], { mode: 0o600 });
+                  else fs.rmSync(manifestFilePath, { force: true });
+                } else {
+                  compensationFailed = true;
+                }
+              }
+            } else if (before[1] !== null) compensationFailed = true;
+
+            if (compensationFailed) fail("Foreign modification detected during compensation; agent files preserved; manual reconciliation required");
+            agentState(agent, null, { adoptAgent: true });
           } else {
             childSetup(target, agent, run, true);
             agentState(agent, null);
           }
         }
+        if (!markerIsOurs) fail("Metadata drift during compensation");
         atomicJSON(journalPath, { ...journal, state: "compensated" });
         atomicJSON(markerPath, prior);
       } catch (compensation) {
-        // Retain the pending ownership marker and journal; never guess recovery.
-        atomicJSON(markerPath, pending);
+        if (markerIsOurs) {
+          try {
+            atomicJSON(markerPath, pending);
+          } catch {}
+        }
+        try {
+          atomicJSON(journalPath, {
+            ...journal,
+            state: "failed",
+            error: error.message,
+            compensationError: compensation.message
+          });
+        } catch {}
         fail(`Pending deployment requires manual reconciliation: ${error.message}; compensation: ${compensation.message}`);
       }
       throw error;
     }
+
     // Marker is authoritative once published. A journal failure cannot undo an
     // already committed release: setup-complete is sufficient recovery evidence.
     try { atomicJSON(journalPath, { ...journal, state: "committed" }); } catch { /* retained setup-complete journal */ }
@@ -289,7 +621,13 @@ export function runDeploy(options = {}, dependencies = {}) {
 export function parseDeployArgs(args) {
   const options = {};
   const values = { "--agent-dir": "agentDir", "--install-dir": "installDir", "--source-dir": "sourceDir" };
-  const flags = { "--update": "update", "--rollback-source": "rollbackSource", "--dry-run": "dryRun", "--help": "help" };
+  const flags = {
+    "--update": "update",
+    "--rollback-source": "rollbackSource",
+    "--adopt-agent": "adoptAgent",
+    "--dry-run": "dryRun",
+    "--help": "help"
+  };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     const key = values[arg] || flags[arg];
@@ -300,13 +638,14 @@ export function parseDeployArgs(args) {
       options[key] = args[++i];
     } else options[key] = true;
   }
-  if (options.update && options.rollbackSource) fail("--update and --rollback-source are mutually exclusive");
+  const modes = [options.update, options.rollbackSource, options.adoptAgent].filter(Boolean);
+  if (modes.length > 1) fail("--update, --rollback-source, and --adopt-agent are mutually exclusive");
   return options;
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const options = parseDeployArgs(process.argv.slice(2));
-    if (options.help) console.log("Uso: node scripts/deploy.mjs [--update | --rollback-source] [--dry-run] [--agent-dir DIR] [--install-dir DIR] [--source-dir DIR]\nSin modo: instalación nueva. No adopta instalaciones existentes. Reiniciá/recargá Pi para cargar la nueva fuente.");
+    if (options.help) console.log("Uso: node scripts/deploy.mjs [--update | --rollback-source | --adopt-agent] [--dry-run] [--agent-dir DIR] [--install-dir DIR] [--source-dir DIR]\nSin modo: instalación nueva. Con --adopt-agent: adopta una instalación existente previa válida en una raíz managed nueva inexistente. Reiniciá/recargá Pi para cargar la nueva fuente.");
     else console.log(JSON.stringify(runDeploy(options), null, 2));
   } catch (error) {
     console.error(`Despliegue rechazado: ${error.message}`);
