@@ -141,6 +141,7 @@ function sourceFiles(source) {
   owned(path.join(source, "scripts"), true);
   const files = ["index.mjs", "package.json", "scripts/setup.mjs", "scripts/rollback.mjs",
     ...fs.readdirSync(path.join(source, "src")).filter((name) => /^[\w-]+\.mjs$/.test(name)).map((name) => `src/${name}`)];
+  if (exists(path.join(source, "scripts/doctor.mjs"))) files.push("scripts/doctor.mjs");
   if (exists(path.join(source, "README.md"))) files.push("README.md");
   return files.sort().map((name) => {
     const file = path.join(source, name);
@@ -210,8 +211,11 @@ function verifyRelease(item, root, run) {
   if (release.version !== 1 || release.hash !== item.hash || source.hash !== item.hash ||
       JSON.stringify(release.files) !== JSON.stringify(expected)) fail("Release content hash mismatch");
   const top = [...new Set(source.files.map((file) => file.path.split("/")[0])), ".release.json"].sort();
+  const expectedScripts = source.files.some((f) => f.path === "scripts/doctor.mjs")
+    ? "doctor.mjs,rollback.mjs,setup.mjs"
+    : "rollback.mjs,setup.mjs";
   if (fs.readdirSync(item.path).sort().join() !== top.join() ||
-      fs.readdirSync(path.join(item.path, "scripts")).sort().join() !== "rollback.mjs,setup.mjs" ||
+      fs.readdirSync(path.join(item.path, "scripts")).sort().join() !== expectedScripts ||
       fs.readdirSync(path.join(item.path, "src")).sort().join() !== source.files.filter((file) => file.path.startsWith("src/")).map((file) => path.basename(file.path)).sort().join()) {
     fail("Unexpected files in immutable release");
   }

@@ -18,6 +18,7 @@
   "main": "index.mjs",
   "scripts": {
     "deploy": "node scripts/deploy.mjs",
+    "doctor": "node scripts/doctor.mjs",
     "rollback": "node scripts/rollback.mjs",
     "setup": "node scripts/setup.mjs",
     "test": "node --test"
