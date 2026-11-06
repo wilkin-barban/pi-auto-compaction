@@ -92,6 +92,7 @@ La documentación técnica completa está organizada en guías modulares:
 | Comando | Equivalente npm | Descripción |
 |---|---|---|
 | `node scripts/deploy.mjs` | `npm run deploy` | Despliegue inicial exclusivo en una raíz inexistente (creada por el wrapper; cualquier raíz preexistente sin marcador es rechazada, incluso vacía; no ejecute `mkdir` primero; use `--update`). |
+| `node scripts/deploy.mjs --adopt-agent` | `npm run deploy -- --adopt-agent` | Adopta una instalación previa válida del agente en una nueva raíz gestionada inexistente preservando la línea base original. |
 | `node scripts/deploy.mjs --dry-run` | `npm run deploy -- --dry-run` | Simula el despliegue sin modificar archivos ni configuración. |
 | `node scripts/deploy.mjs --update` | `npm run deploy -- --update` | Actualiza la instalación a partir de las fuentes actuales. |
 | `node scripts/deploy.mjs --rollback-source` | `npm run deploy -- --rollback-source` | Revierte el código activo al release anterior registrado (operación unitaria, repetirla es no-op). |

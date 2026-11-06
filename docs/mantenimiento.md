@@ -17,14 +17,14 @@ git status
 
 No proceda si existen modificaciones sin confirmar o archivos sin seguimiento que puedan interferir con la actualización.
 
-Para todas las operaciones de despliegue y mantenimiento, defina las variables canónicas de entorno para su agente e instalación:
+Para todas las operaciones de despliegue y mantenimiento, defina las variables canónicas de entorno para su agente e instalación (especificando la raíz gestionada elegida, por ejemplo `$HOME/.local/share/pi-auto-compaction` o `$HOME/.local/share/pi-auto-compaction-managed`):
 
 ```bash
 AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
-INSTALL_DIR="$HOME/.local/share/pi-auto-compaction"
+INSTALL_DIR="${PI_AUTO_COMPACTION_INSTALL_DIR:-$HOME/.local/share/pi-auto-compaction}"
 ```
 
-Asegúrese de mantener estas mismas variables o rutas consistentes en todos los comandos subsiguientes.
+Asegúrese de mantener estas mismas variables o rutas consistentes en todos los comandos subsiguientes (`--agent-dir "$AGENT_DIR" --install-dir "$INSTALL_DIR"`).
 
 ### Paso 2: Descargar cambios sin merges divergentes
 
@@ -98,13 +98,23 @@ Existen dos tipos fundamentales de reversión en el sistema. Es crucial entender
 - **Operación unitaria idempotente (no basculante)**: Revierte estrictamente a la versión registrada en el campo `previous`. Si se ejecuta una segunda vez consecutiva, el comando detecta que `target.hash === current.hash` y concluye como un **no-op limpio exitoso** (`noop: true`); no genera error ni actúa como un interruptor de vaivén.
 - **Inmutabilidad y retención de releases**: No reconstruye ni recompila archivos. Apunta el loader al directorio del release anterior cuya validez ya fue verificada. Los releases anteriores en `$INSTALL_DIR/releases/` se conservan en disco; no existe limpieza automática de código fuente antiguo para no romper procesos activos con descriptores abiertos.
 - **Preservación del baseline y configuración**: Preserva la línea base `originalOverrides` en el manifiesto y los overrides de tokens en `settings.json` (el subproceso setup actualiza los metadatos de la fuente y `loaderHash` para la release activa, sin alterar la configuración de modelos ni eliminar la línea base). El rollback de código NO es una desinstalación.
+- **Límites de rollback tras adopción (`--adopt-agent`)**: En una instalación originada por adopción de un agente preexistente en una nueva raíz gestionada, el release inicial adoptado no posee una release gestionada previa registrada (`previous: null`). En consecuencia, ejecutar `--rollback-source --agent-dir "$AGENT_DIR" --install-dir "$INSTALL_DIR"` resulta en un **no-op limpio** (`noop: true`) con sus rutas explícitas requeridas; no ejecute comandos sin flags de ruta si usó una raíz gestionada personalizada.
+  - **Reversión a fuente antigua mediante setup oficial**: Para revertir la adopción y volver al código plano previo, se debe ejecutar directamente el instalador oficial de la fuente antigua preservada:
+    ```bash
+    OLD_SOURCE_DIR="${OLD_SOURCE_DIR:-$HOME/.local/share/pi-auto-compaction}"
+    node "$OLD_SOURCE_DIR/scripts/setup.mjs" --source-dir "$OLD_SOURCE_DIR" --target-dir "$AGENT_DIR"
+    ```
+    *Comprobación previa obligatoria*: Tenga en cuenta que tras la adopción, el manifiesto del agente apunta a la release nueva (`$INSTALL_DIR/releases/...`); verifique la ruta real de la fuente antigua en su registro de respaldo antes de invocar la reversión. Este comando requiere que el agente no presente drift en campos gestionados, no existan bloqueos ni journals pendientes y se cuente con un snapshot seguro previo. **Si existe un journal pendiente, el comando se detiene por seguridad; nunca lo eluda ni fuerce**.
+  - **Aviso de desincronización de metadatos (Metadata DESYNC)**: Restaurar el agente con el setup de la fuente antigua deja el loader y manifiesto del agente apuntando a `$OLD_SOURCE_DIR`, pero el marcador del wrapper `$INSTALL_DIR/.pi-auto-compaction-deploy.json` permanece en estado `"ready"` apuntando a la release gestionada. Esto produce una desincronización que hará que cualquier futuro `node scripts/deploy.mjs --update` rechace la ejecución (`Agent manifest source ownership mismatch`, no el error genérico `Foreign agent manifest/loader: ownership refused`). **ALTO**: No borre el marcador ni intente trucos manuales; la reconciliación automatizada no está implementada y requiere atención manual explícita. Ambas raíces (antigua y gestionada) deben conservarse intactas hasta recargar todas las sesiones de Pi.
+  - **Rollback en actualizaciones posteriores**: Si tras la adopción se aplicó una nueva actualización (`--update`), `--rollback-source` funciona normalmente permitiendo regresar al release inicial adoptado.
+  - **Compensación ante fallos de adopción y semántica de recibos**: Durante la adopción, si falla el setup o la publicación, la compensación valida estrictamente los hashes del recibo de intención del escritor (`trusted-writer intent receipt`) emitido antes de cualquier escritura. Si el manifiesto o los archivos del agente difieren de los hashes sellados en el recibo o sufrieron mutaciones concurrentes foráneas, la compensación rehúsa sobreescribirlos, preserva los bytes foráneos de forma determinista y retiene el journal y marcador en estado `pending`, sin prometer atomicidad universal ante caídas catastróficas del sistema operativo (`kill -9`).
 
 ### Detalle de la Desinstalación de Configuración (`rollback.mjs`)
 
 - **Restauración exacta desde `originalOverrides`**: Lee `.pi-auto-compaction-manifest.json` y restaura los campos `reserveTokens` y `keepRecentTokens` de los modelos gestionados exactamente al valor numérico o estado ausente que tenían originalmente en la línea base capturada al instalar.
 - **Preservación de configuraciones ajenas**: Todos los demás campos de `settings.json` modificados por el usuario o por otras extensiones permanecen completamente intactos.
 - **Compensación transaccional**: Si la desinstalación experimenta un error a mitad del proceso, compensa en orden inverso para dejar el sistema en un estado coherente.
-- **Advertencia crítica sobre reinstalación posterior**: Al ejecutar `rollback.mjs`, se eliminan el loader y el manifiesto del agente (`$AGENT_DIR`), pero **se conserva el marcador `.pi-auto-compaction-deploy.json` y las releases en `$INSTALL_DIR`**. Si posteriormente intenta ejecutar `node scripts/deploy.mjs`, la instalación inicial fallará cerrado porque el marcador ya existe en `$INSTALL_DIR` (`Managed install already exists; use --update`), y `deploy.mjs --update` fallará porque el agente ya no posee el manifiesto esperado. **La reinstalación tras una desinstalación de configuración requiere un procedimiento explícito y reconciliado que no está automatizado actualmente; no elimine el marcador manualmente a ciegas.**
+- **Advertencia crítica sobre reinstalación posterior**: Al ejecutar `rollback.mjs`, se eliminan el loader y el manifiesto del agente (`$AGENT_DIR`), pero **se conserva el marcador `.pi-auto-compaction-deploy.json` y las releases en `$INSTALL_DIR`**. Si posteriormente intenta ejecutar `node scripts/deploy.mjs`, la instalación inicial fallará cerrado porque el marcador ya existe en `$INSTALL_DIR` (`Managed install already exists; use --update`), y `deploy.mjs --update` fallará porque el agente ya no posee el manifiesto esperado. **La reinstalación tras una desinstalación de configuración es un problema separado que sigue pendiente y NO está resuelto actualmente en este paquete; no asuma ni simule que está resuelto, ni elimine el marcador manualmente a ciegas.**
 
 ---
 

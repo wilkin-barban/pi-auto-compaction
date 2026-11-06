@@ -69,7 +69,7 @@ npm ci --ignore-scripts
 npm test
 ```
 
-> **Verificación esperada**: La suite debe ejecutar y aprobar todas las pruebas unitarias y de integración (163 pruebas en el entorno de referencia) sin fallos ni cancelaciones.
+> **Verificación esperada**: La suite debe ejecutar y aprobar todas las pruebas unitarias y de integración sin fallos ni cancelaciones; consulte la salida de `npm test` y `repository-evidence.md` para el recuento verificado de referencia (176 pruebas en 10 suites observadas actualmente).
 
 ### Paso 3: Simular el despliegue con `--dry-run`
 
@@ -131,10 +131,11 @@ El script `scripts/deploy.mjs` proporciona control detallado sobre las rutas y m
 ```text
 Uso: node scripts/deploy.mjs [opciones]
 
-Modos de ejecución (excluyentes):
-  (por defecto)       Despliegue inicial exclusivo en una raíz inexistente (creada por el propio wrapper; cualquier raíz preexistente sin marcador es rechazada, incluso vacía; no ejecute mkdir primero; use --update).
+Modos de ejecución (mutuamente excluyentes):
+  (por defecto)       Despliegue inicial exclusivo en una raíz inexistente y agente limpio (creada por el propio wrapper; cualquier raíz preexistente sin marcador es rechazada, incluso vacía; no ejecute mkdir primero; use --update).
   --update            Actualiza la instalación existente al hash del código fuente actual.
   --rollback-source   Revierte el release activo al release anterior registrado en `previous`. (Operación unitaria; repetirla es un no-op, no un error ni alternancia; no desinstala la extensión).
+  --adopt-agent       Adopta un agente previamente gestionado con manifiesto y loader válidos en una raíz gestionada nueva inexistente, preservando la línea base original y la fuente antigua intacta.
 
 Opciones generales:
   --dry-run           Simula la operación sin escribir en disco ni alterar configuraciones.
@@ -146,16 +147,168 @@ Opciones generales:
 
 ---
 
-## 6. Manejo de instalaciones existentes y limitaciones de migración legacy
+## 6. Manejo de instalaciones existentes y adopción controlada (`--adopt-agent`)
 
-Por diseño y seguridad del usuario, `deploy.mjs` **nunca adopta automáticamente** un directorio preexistente ni asume el control de un agente ocupado:
+Por diseño y seguridad del usuario, `deploy.mjs` nunca asume el control de un agente ni adopta directorios de forma desatendida o silenciosa:
 
-1. **Raíz de instalación no gestionada rechazada**: Si `$INSTALL_DIR` ya existe pero no contiene el marcador canónico `.pi-auto-compaction-deploy.json` (por ejemplo, una instalación manual previa), `deploy.mjs` rechazará la operación con `Unmanaged install root: ownership required; legacy adoption is deferred`.
-2. **Agente ocupado rechazado (`Foreign agent manifest/loader: ownership refused`)**: Si el directorio del agente (`$AGENT_DIR`) ya contiene un loader (`extensions/omniroute-compaction.ts`) o un manifiesto (`.pi-auto-compaction-manifest.json`) que no corresponde a una release activa gestionada por este wrapper (`deploy.mjs` líneas 153–154), **la operación es rechazada categóricamente, incluso si se especifica un `--install-dir` completamente nuevo**.
-3. **Migración legacy NO implementada**:
-   - Actualmente **no existe un procedimiento automatizado de adopción ni migración** de instalaciones planas preexistentes (como la instalación activa que opera en el entorno de desarrollo de Wilkin).
-   - La instalación plana actual de Wilkin continúa funcionando intacta sin tocarse.
-   - El nuevo wrapper transaccional está disponible para instalaciones en agentes limpios/vacíos (por ejemplo, en otra máquina o en un nuevo perfil de agente).
-   - Cualquier migración futura requiere una decisión explícita, planificada y reconciliada de mantenimiento, acompañada de copias de seguridad manuales de la configuración y del loader existente.
-   - **No elimine a ciegas el loader existente ni los archivos de estado**, y no borre marcadores ni journals para intentar forzar la adopción. No existe en este momento ningún comando CLI para adoptar la instalación activa.
-4. **Retención de releases antiguos**: Durante el ciclo de vida, los releases anteriores bajo `$INSTALL_DIR/releases/` se conservan en disco de forma indefinida para permitir reversión instantánea (`--rollback-source`) y no romper procesos o subagentes de Pi que mantengan descriptores abiertos. No existe limpieza automática de releases obsoletos.
+1. **Rechazo por defecto de raíces no gestionadas y agentes ocupados**:
+   - Si `$INSTALL_DIR` ya existe pero no contiene el marcador canónico `.pi-auto-compaction-deploy.json` (por ejemplo, una instalación plana previa), `deploy.mjs` rechazará la operación con `Unmanaged install root: ownership required; legacy adoption is deferred`.
+   - Si el directorio del agente (`$AGENT_DIR`) ya contiene un loader (`extensions/omniroute-compaction.ts`) o un manifiesto (`.pi-auto-compaction-manifest.json`) y **no** se suministra la bandera explícita `--adopt-agent`, la operación es rechazada categóricamente (`Foreign agent manifest/loader: ownership refused`).
+
+2. **Procedimiento de adopción mediante `--adopt-agent`**:
+   Para migrar un agente existente previamente gestionado por `pi-auto-compaction` hacia la estructura de releases inmutables gestionadas, utilice `--adopt-agent`. A diferencia del despliegue inicial en raíz limpia (cuyo valor por defecto en la CLI es `$HOME/.local/share/pi-auto-compaction`), la adopción exige explícitamente una ruta gestionada nueva que no colisione con instalaciones planas existentes:
+
+   ```bash
+   AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+   INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/share/pi-auto-compaction-managed}"
+
+   node scripts/deploy.mjs --adopt-agent --agent-dir "$AGENT_DIR" --install-dir "$INSTALL_DIR"
+   ```
+
+3. **Prerrequisitos y guardias de validación de adopción**:
+   - **Agente previamente gestionado y válido**: Requiere que existan tanto el manifiesto `.pi-auto-compaction-manifest.json` como el loader oficial `extensions/omniroute-compaction.ts`. No se permite adoptar agentes con archivos desconocidos o sin manifiesto.
+   - **Integridad de hash y esquema**: El hash del loader debe coincidir con `loaderHash` del manifiesto, cumplir la versión `1.0.0`, incluir exactamente los 4 modelos gestionados (`openai/gpt-6-sol`, `openai/gpt-6.1-sol`, `openai-codex/gpt-6-sol`, `openai-codex/gpt-6.1-sol`) y la estructura estricta de `originalOverrides`.
+   - **Ausencia de drift**: Los valores de tokens en `settings.json` deben coincidir con `expectedManagedValues`. Si hubo modificaciones externas no registradas, la adopción es rechazada fail-closed.
+   - **Sin bloqueos ni journals activos**: No debe haber `.pi-auto-compaction.lock` ni `recovery-journal.json` pendientes en el agente.
+   - **Raíz de instalación nueva e inexistente**: El `--install-dir` destino debe ser una ruta **nueva que no exista previamente**. Si el directorio ya existe, se rechaza inmediatamente para evitar colisiones.
+   - **Fuente antigua intacta y válida**: La fuente referenciada en `packageSourceDir` del manifiesto previo debe existir, tener metadatos válidos de paquete (`name: "pi-auto-compaction"`) y scripts de setup/rollback. Esta fuente antigua **se conserva intacta en disco y nunca se modifica ni elimina**, permitiendo que sesiones activas sigan operando y sirviendo de respaldo de seguridad.
+   - **Rutas canónicas y libres de symlinks inseguros**: No se permiten enlaces simbólicos en las rutas del agente, instalación, fuente ni fuente adoptada, ni solapamientos entre ellas.
+
+4. **Copia de seguridad previa recomendada (Snapshot seguro)**:
+   Antes de ejecutar la adopción, es imperativo realizar un snapshot privado y seguro del agente. Crear copias superficiales reutilizables como `settings.json.bak` dentro de `$AGENT_DIR` es **inseguro**: nombres fijos provocan sobreescrituras accidentales de la línea base, la máscara de permisos (`umask`) por defecto puede filtrar datos a otros usuarios, no se rechazan symlinks y se contamina el directorio del agente.
+
+   En su lugar, utilice un procedimiento canónico que cree un directorio exclusivo e irrepetible fuera de Git y del agente, con permisos restrictivos (0700 en directorios, 0600 en archivos), respete `$AGENT_DIR`, rechace enlaces simbólicos en toda la cadena de directorios ancestros, falle de forma cerrada si falta cualquiera de los archivos requeridos, y respalde los tres archivos de configuración gestionados.
+
+   > **Aviso de confidencialidad y contenido de configuración**: Excluir `auth.json` previene respaldar los tokens de autenticación almacenados allí. No obstante, `settings.json` se respalda de forma completa y puede contener opciones privadas, claves de API personalizadas u otras configuraciones sensibles definidas por el usuario. Excluir `auth.json` **no equivale ni garantiza la ausencia total de secretos** en `settings.json`. Por ello, el directorio de respaldo debe mantenerse estrictamente privado (0700/0600) bajo `$HOME`.
+
+   **Script canónico en Python (procedimiento de snapshot único)**:
+   ```python
+   import os, sys, tempfile, stat, hashlib
+
+   def get_current_uid():
+       return os.getuid() if hasattr(os, "getuid") else None
+
+   def verify_path_ancestors(target_path, home_path):
+       current_uid = get_current_uid()
+       absolute = os.path.abspath(target_path)
+       real_home = os.path.abspath(home_path) if home_path else None
+       cursor = os.path.splitdrive(absolute)[0] + os.sep
+       parts = [p for p in absolute[len(cursor):].split(os.sep) if p]
+
+       for part in parts:
+           cursor = os.path.join(cursor, part)
+           if not os.path.lexists(cursor):
+               break
+           st = os.lstat(cursor)
+           if stat.S_ISLNK(st.st_mode):
+               sys.exit(f"Error de seguridad: ancestro o ruta {cursor} es un enlace simbólico; abortando.")
+           if current_uid is not None:
+               is_under_home = real_home and (cursor == real_home or cursor.startswith(real_home + os.sep))
+               if is_under_home:
+                   if st.st_uid != current_uid:
+                       sys.exit(f"Error de seguridad: {cursor} dentro de HOME pertenece a UID {st.st_uid} (se requiere UID actual {current_uid}); abortando.")
+               else:
+                   if st.st_uid != 0 and st.st_uid != current_uid:
+                       sys.exit(f"Error de seguridad: ancestro del sistema {cursor} pertenece a UID {st.st_uid} (se permite root 0 o {current_uid}); abortando.")
+       return absolute
+
+   home_dir = os.environ.get("HOME") or os.path.expanduser("~")
+   agent_dir = os.environ.get("AGENT_DIR") or os.environ.get("PI_CODING_AGENT_DIR") or os.path.join(home_dir, ".pi", "agent")
+   base_backup_dir = os.path.join(home_dir, ".local", "state", "pi-auto-compaction-backups")
+
+   # 1. Verificar ancestros antes de cualquier mkdir o chmod
+   verify_path_ancestors(agent_dir, home_dir)
+   verify_path_ancestors(os.path.dirname(base_backup_dir), home_dir)
+
+   current_uid = get_current_uid()
+
+   # 2. Asegurar directorio base privado (0700) bajo HOME; rehusar si pertenece a otro UID o es symlink
+   if os.path.lexists(base_backup_dir):
+       st = os.lstat(base_backup_dir)
+       if stat.S_ISLNK(st.st_mode):
+           sys.exit(f"Error de seguridad: directorio base {base_backup_dir} es un enlace simbólico; abortando.")
+       if not stat.S_ISDIR(st.st_mode):
+           sys.exit(f"Error de seguridad: directorio base {base_backup_dir} no es un directorio; abortando.")
+       if current_uid is not None and st.st_uid != current_uid:
+           sys.exit(f"Error de seguridad: directorio base {base_backup_dir} pertenece a otro usuario (UID {st.st_uid}); abortando sin alterar permisos.")
+       if (st.st_mode & 0o777) != 0o700:
+           os.chmod(base_backup_dir, 0o700)
+   else:
+       os.makedirs(base_backup_dir, mode=0o700, exist_ok=True)
+       os.chmod(base_backup_dir, 0o700)
+
+   verify_path_ancestors(base_backup_dir, home_dir)
+
+   # 3. Crear directorio exclusivo e irrepetible para este snapshot pre-adopción
+   backup_dir = tempfile.mkdtemp(prefix="pre-migration-", dir=base_backup_dir)
+   os.chmod(backup_dir, 0o700)
+
+   # 4. Snapshot de archivos gestionados (falla cerrado si falta cualquiera, symlink, hardlink o UID ajeno)
+   targets = [
+       ("settings.json", os.path.join(agent_dir, "settings.json")),
+       (".pi-auto-compaction-manifest.json", os.path.join(agent_dir, ".pi-auto-compaction-manifest.json")),
+       ("omniroute-compaction.ts", os.path.join(agent_dir, "extensions", "omniroute-compaction.ts")),
+   ]
+
+   metadata = []
+   for name, src in targets:
+       verify_path_ancestors(src, home_dir)
+       if not os.path.lexists(src):
+           sys.exit(f"Error: archivo requerido {src} no existe; abortando snapshot fail-closed.")
+       st = os.lstat(src)
+       if stat.S_ISLNK(st.st_mode):
+           sys.exit(f"Error de seguridad: archivo requerido {src} es un enlace simbólico; abortando.")
+       if not stat.S_ISREG(st.st_mode):
+           sys.exit(f"Error de seguridad: archivo requerido {src} no es un archivo regular; abortando.")
+       if current_uid is not None and st.st_uid != current_uid:
+           sys.exit(f"Error de seguridad: archivo {src} pertenece a UID {st.st_uid} (se requiere UID actual {current_uid}); abortando.")
+       if st.st_nlink != 1:
+           sys.exit(f"Error de seguridad: archivo {src} tiene enlaces duros adicionales (nlink={st.st_nlink}); abortando.")
+
+       dst = os.path.join(backup_dir, name)
+       fd_dst = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+       hasher = hashlib.sha256()
+       with open(src, "rb") as f_src, os.fdopen(fd_dst, "wb") as f_dst:
+           while chunk := f_src.read(65536):
+               hasher.update(chunk)
+               f_dst.write(chunk)
+       os.chmod(dst, 0o600)
+       metadata.append(f"{name}: {hasher.hexdigest()} ({os.path.getsize(dst)} bytes)")
+
+   print(f"BACKUP_DIR={backup_dir}")
+   print("Snapshot privado completado exitosamente:")
+   for item in metadata:
+       print(f"  - {item}")
+   ```
+
+   *Garantías*: No se realiza limpieza de la raíz del sistema ni del backup; el backup queda aislado y listo para contingencias.
+
+
+5. **Límites de rollback tras adopción y reversión controlada**:
+   - **No-op en el primer release adoptado**: En la primera release adoptada, el marcador se inicializa con `previous: null`. En consecuencia, ejecutar `node scripts/deploy.mjs --rollback-source --agent-dir "$AGENT_DIR" --install-dir "$INSTALL_DIR"` sobre este release es un no-op limpio y documentado (`noop: true`), el cual requiere sus flags explícitos de ruta.
+   - **Rollback operativo en actualizaciones subsiguientes**: Tras aplicar un nuevo despliegue con `--update` sobre el agente adoptado, `--rollback-source` opera normalmente permitiendo revertir al release gestionado previo.
+   - **Compensación ante fallos de adopción**: Si la adopción falla antes de publicar el release, la lógica de compensación con guardas CAS restaura de forma byte-exacta el estado inicial del agente sin pisar mutaciones concurrentes de terceros. Sin embargo, estas guardas protegen la consistencia lógica y de concurrencia, sin prometer recuperación atómica universal ante cortes catastróficos del sistema operativo o terminación abrupta del proceso (`kill -9`).
+   - **Procedimiento de reversión a la fuente antigua plana (Rollback de operador)**:
+     Para revertir la adopción y volver al código plano original que utilizaba el agente:
+     1. **Identificar la ruta real de la fuente previa**: Tenga en cuenta que *tras* una adopción exitosa, el campo `packageSourceDir` del manifiesto del agente apunta a la nueva release gestionada (`$INSTALL_DIR/releases/<sha256>`). El operador debe comprobar la ruta de la fuente previa antes de iniciar la reversión, consultando el snapshot de metadatos o definiendo la variable de entorno correspondiente:
+        ```bash
+        OLD_SOURCE_DIR="${OLD_SOURCE_DIR:-$HOME/.local/share/pi-auto-compaction}"
+        ```
+        (Ajustable para otros directorios personales; no se asume una ruta codificada de forma universal).
+     2. **Ejecutar el instalador de la fuente antigua**:
+        ```bash
+        node "$OLD_SOURCE_DIR/scripts/setup.mjs" --source-dir "$OLD_SOURCE_DIR" --target-dir "$AGENT_DIR"
+        ```
+        **Requisitos**: Requiere propiedad gestionada válida, ausencia de drift en `settings.json`, ausencia de bloqueos o journals pendientes y contar con la copia de seguridad. **Si existe un journal pendiente, el instalador se detiene inmediatamente; nunca lo eluda ni fuerce**.
+     3. **Advertencia crítica de desincronización de metadatos (Metadata DESYNC)**:
+        La ejecución de `setup.mjs` de la fuente antigua restaura el loader y el manifiesto del agente para apuntar a `$OLD_SOURCE_DIR`. Sin embargo, el marcador del wrapper en `$INSTALL_DIR/.pi-auto-compaction-deploy.json` permanece en estado `"ready"` referenciando la release gestionada.
+        Esto produce una **desincronización de metadatos**: futuros intentos de ejecutar `node scripts/deploy.mjs --update` rechazarán la operación (`Agent manifest source ownership mismatch`, no el error genérico `Foreign agent manifest/loader: ownership refused`) debido a que el agente ya no apunta a la release gestionada activa.
+        **ALTO**: No intente resolver esta situación borrando marcadores a ciegas ni inventando banderas ficticias en disco. Un procedimiento de reconciliación automática posterior **NO está implementado** en la versión actual y requerirá una intervención manual explícita.
+     4. **Retención de fuentes**: Tanto la fuente antigua plana como los releases gestionados deben conservarse intactos hasta que todas las sesiones de Pi hayan sido recargadas.
+   - **Reinstalación tras rollback de configuración**: La reinstalación de la extensión tras ejecutar `rollback.mjs` (desinstalación completa de configuración) sigue sin estar implementada en este paquete y no forma parte del alcance de esta corrección.
+
+6. **Recarga obligatoria de sesiones**:
+   Tras la adopción exitosa, el loader oficial del agente apuntará al nuevo release bajo `$INSTALL_DIR/releases/<sha256>`. Para que las sesiones activas utilicen el nuevo código, ejecute `/reload` en cada sesión de Pi o inicie nuevas terminales.
+
+7. **Retención de releases y fuentes antiguas**:
+   Tanto los releases creados bajo `$INSTALL_DIR/releases/` como la fuente antigua plana permanecen indefinidamente en disco; no existe purga automática para no invalidar descriptores de archivos de procesos en curso.
