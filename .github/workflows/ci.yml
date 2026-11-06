@@ -38,7 +38,7 @@ jobs:
       - name: Run test suite
         run: npm test
 
-  compat-pi-1.5:
+  compat-pi-1-5:
     name: Pi 1.5.0 compatibility smoke
     runs-on: ubuntu-latest
 
