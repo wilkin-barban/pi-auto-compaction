@@ -35,7 +35,7 @@ No-objetivos: no cambiar código, tests, esquema de settings, políticas v2 ni e
 - T4 — Skill, prompts y registro en `AGENTS.md`. Writer. Commit propio.
 - T5 — Metadata y política (`package.json`, `SECURITY.md`, `CONTRIBUTING.md`, avisos). Inline. Commit propio.
 - T6 — Escaneo de privacidad, verificación de enlaces, `npm test`. Inline.
-- T7 — Push, CI, `gh repo edit` y visibilidad. Inline. **En curso**.
+- T7 — Push, CI, `gh repo edit` y visibilidad. Inline. **Hecho**: push `11140d1`, CI `42293130534` verde (Node 22, Node 24, Pi 1.5.0), descripción inglesa y topics `pi`, `gentle-shell`, `herdr`, `context-compaction`, `ai-agents`, `llm`; visibilidad cambiada a `PUBLIC` y verificada con `gh repo view`.
 
 ## Criterios de aceptación
 
@@ -47,6 +47,10 @@ No-objetivos: no cambiar código, tests, esquema de settings, políticas v2 ni e
 - A6: 326/326, CI verde, `HEAD == origin/main`, árbol limpio, sin ramas nuevas.
 - A7: repositorio público, descripción inglesa y topics; licencia `UNLICENSED` explícita.
 - A8: reporte final con archivos, comandos, tests, CI, visibilidad, descripción, licencia y riesgos.
+
+## Resultado
+
+Repositorio público en https://github.com/wilkinbarban/pi-auto-compaction, `UNLICENSED` y `private: true` en `package.json`, sin publicación en npm. Documentación bilingüe: `README.md` (EN, default) + `README.es.md`, `docs/en/*` (5) y `docs/es/*` (5), skill `skills/pi-auto-compaction/SKILL.md` con prompts EN/ES. Escaneo de privacidad limpio y CI verde antes del cambio de visibilidad.
 
 ## Evidencia RED/GREEN
 
