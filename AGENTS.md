@@ -1,6 +1,6 @@
 # Directrices para Asistentes y Agentes (AGENTS.md)
 
-Este repositorio contiene la extensión privada de compactación automática para Pi, gentle-shell y herdr. Todos los asistentes automatizados (Pi, subagentes o harnesses externos) deben acatar estrictamente las siguientes directrices al operar en este proyecto.
+Este repositorio contiene la extensión pública source-available de compactación automática para Pi, gentle-shell y herdr. Todos los asistentes automatizados (Pi, subagentes o harnesses externos) deben acatar estrictamente las siguientes directrices al operar en este proyecto.
 
 ---
 
