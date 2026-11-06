@@ -53,8 +53,8 @@ describe("telemetry module", () => {
       prompt: "Secret conversation content",
       userHistory: ["my private code"],
       secretApiKey: "sk-ant-12345",
-      rawError: "Stack trace at /home/wilkin/private",
-      unrelatedProjectFile: "/home/wilkin/secret/project/file.ts",
+      rawError: "Stack trace at /home/example/private",
+      unrelatedProjectFile: "/home/example/secret/project/file.ts",
     });
 
     const lines = fs.readFileSync(telemetryFile, "utf-8").trim().split("\n");

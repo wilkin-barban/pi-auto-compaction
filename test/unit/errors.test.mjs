@@ -51,10 +51,10 @@ describe("errors module", () => {
   });
 
   it("sanitizes error messages removing tokens, keys and user home paths", () => {
-    const raw = "Error: request failed with auth Bearer sk-ant-api03-abcdef1234567890 at /home/wilkin/Desktop/secret/file.txt";
+    const raw = "Error: request failed with auth Bearer sk-ant-api03-abcdef1234567890 at /home/example/Desktop/secret/file.txt";
     const sanitized = sanitizeErrorMessage(raw);
     assert.ok(!sanitized.includes("sk-ant-api03-abcdef1234567890"), "Must not leak API key");
-    assert.ok(!sanitized.includes("/home/wilkin/"), "Must not leak home path");
+    assert.ok(!sanitized.includes("/home/example/"), "Must not leak home path");
     assert.ok(sanitized.includes("[REDACTED_SECRET]") || sanitized.includes("[REDACTED_PATH]"), "Must replace sensitive tokens");
   });
 });

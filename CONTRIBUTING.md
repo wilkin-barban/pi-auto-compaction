@@ -2,6 +2,8 @@
 
 Este documento establece las directrices de desarrollo, pruebas y mantenimiento de **pi-auto-compaction**.
 
+El repositorio es público como *source-available* bajo `UNLICENSED`: se aceptan reportes y parches por los canales habituales, pero no se publica en npm ni se otorga licencia de redistribución. Antes de abrir un issue con datos del entorno, eliminá credenciales, rutas personales y contenido de conversaciones.
+
 ---
 
 ## 1. Disciplina de desarrollo: TDD Estricto

@@ -6,10 +6,10 @@ Este documento describe la política de seguridad y el procedimiento para report
 
 ## 1. Alcance y Naturaleza del Proyecto
 
-Este repositorio es privado (`private: true`) y está licenciado como `UNLICENSED` exclusivamente para uso personal y privado por su propietario.
+Este repositorio es público como *source-available*: el código puede leerse y auditarse, pero está licenciado como `UNLICENSED` (todos los derechos reservados). `package.json` mantiene `private: true` y no se publica en npm.
 
 - **Sin avisos públicos de seguridad**: No se publican avisos de seguridad (GitHub Security Advisories) ni se mantiene un programa público de recompensas por errores (bug bounty).
-- **Prohibición de reportes públicos**: No abra incidencias públicas (issues) ni discusiones en repositorios ajenos para reportar posibles problemas de seguridad o exposición de credenciales.
+- **Reportes por canal privado**: Aunque el repositorio sea público, los reportes de vulnerabilidades se envían por el canal privado descrito abajo, no como issue público, para evitar divulgar un fallo antes de que exista corrección.
 
 ---
 

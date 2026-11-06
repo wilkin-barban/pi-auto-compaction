@@ -22,7 +22,7 @@ Este repositorio contiene la extensión privada de compactación automática par
 
 ## 2. Privacidad y Seguridad
 
-- **Repositorio privado (`UNLICENSED`)**: Este código es de uso exclusivo del propietario. No publicar en npm, no alterar la visibilidad a pública y no enviar datos sensibles fuera del entorno local.
+- **Repositorio público source-available (`UNLICENSED`)**: El código es visible y auditable, pero todos los derechos están reservados. No publicar en npm, no cambiar la licencia a una OSI sin decisión explícita del dueño y no enviar datos sensibles fuera del entorno local.
 - **Sin secretos en el código ni en las pruebas**: Nunca incluir tokens de autenticación, claves de API, archivos `auth.json` reales ni volcados de conversaciones privadas.
 - **Rutas portables**: Utilizar siempre variables de entorno (`PI_CODING_AGENT_DIR`), parámetros configurables o comodines portables como `$HOME`. No codificar rutas estáticas basadas en usuarios específicos.
 
@@ -40,3 +40,16 @@ Este repositorio contiene la extensión privada de compactación automática par
 
 - Si el entorno dispone de herramientas de memoria persistente de Engram (`mem_save`, `mem_search`, `mem_context`), los agentes pueden registrar hitos relevantes, aprendizajes comprobados y resúmenes de sesión bajo el proyecto correspondiente.
 - El uso de Engram es un mecanismo de apoyo y continuidad opcional; no sustituye la documentación técnica en Markdown, los commits atómicos ni los registros de evidencia del repositorio.
+
+---
+
+## 5. Skill de Automatización (skills/pi-auto-compaction/SKILL.md)
+
+El repositorio incluye la skill `skills/pi-auto-compaction/SKILL.md` para asistentes y agentes de codificación. Su función es guiar las operaciones de:
+- **Instalación y despliegue**: Despliegue limpio, adopción de extensiones existentes (`--adopt-agent`) y simulación previa (`--dry-run`).
+- **Configuración**: Selección y verificación de modelos resumidores primario y de respaldo (`/compaction`).
+- **Actualización**: Despliegue de nuevas versiones del código fuente hacia las extensiones activas (`--update`).
+- **Diagnóstico y verificación**: Comprobación integral del entorno mediante `scripts/doctor.mjs` y validación de suites de pruebas con `npm test`.
+
+Para instrucciones directas y ejecutables para agentes, consultar los prompts en `skills/pi-auto-compaction/assets/agent-install-prompt.md` (inglés) y `skills/pi-auto-compaction/assets/agent-install-prompt.es.md` (español).
+

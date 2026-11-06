@@ -976,10 +976,10 @@ test("fresh deployment without settings succeeds via actual CLI on entirely abse
 });
 
 test("canonical python backup snippet executes safely against controlled temporary fixture", (t) => {
-  const docsPath = path.join(project, "docs", "instalacion.md");
+  const docsPath = path.join(project, "docs", "es", "instalacion.md");
   const docsContent = fs.readFileSync(docsPath, "utf8");
   const snippetMatch = docsContent.match(/```python\n([\s\S]*?)```/);
-  assert.ok(snippetMatch, "Canonical Python backup snippet must exist in docs/instalacion.md");
+  assert.ok(snippetMatch, "Canonical Python backup snippet must exist in docs/es/instalacion.md");
   const snippetLines = snippetMatch[1].split("\n");
   const nonEmptyLines = snippetLines.filter((line) => line.trim().length > 0);
   const commonIndent = nonEmptyLines.length

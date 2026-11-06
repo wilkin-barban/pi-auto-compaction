@@ -1,7 +1,7 @@
 {
   "name": "pi-auto-compaction",
   "version": "1.2.1",
-  "description": "Extensión privada de compactación automática controlada por el usuario para Pi, gentle-shell y herdr",
+  "description": "Configurable automatic context compaction for Pi, gentle-shell, and herdr, with selectable summarizer models, fallback, telemetry, and doctor diagnostics.",
   "private": true,
   "repository": {
     "type": "git",
