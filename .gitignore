@@ -25,3 +25,9 @@ baseline*.json
 # Keep reproducible dependencies and repository evidence versionable.
 !package-lock.json
 !repository-evidence.md
+
+# Local agent scratch and historical ODD ledgers are not repository evidence.
+.commandcode/
+odd/tasks/pi-auto-compaction.md
+odd/tasks/pi-auto-compaction-repository.md
+odd/tasks/production-migration.md
