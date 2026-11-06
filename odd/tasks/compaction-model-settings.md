@@ -40,7 +40,7 @@ Validación estricta (`version === 1`, `provider`/`modelId` strings no vacíos, 
 
 ## Tareas
 
-- T1 — S1 store + tests. Writer/worker. Commit propio.
+- T1 — S1 store + tests. Writer/worker. Commit propio. **Hecho**: `src/summarizer-settings.mjs` + 39 tests; `DEFAULT_EFFECTIVE_SUMMARIZER` replica los modelos de `DEFAULT_CONFIG`; `resolveSummarizerSettings` expone `primaryModel`/`fallbackModel` congelados y `sources` por slot.
 - T2 — S2 integración en `config.mjs`/`extension.mjs` + tests de precedencia y caliente. Inline. Commit propio.
 - T3 — S3 comando `/compaction` + TUI + status + tests. Inline. Commit propio.
 - T4 — S4 sección de resumidor en `doctor` + tests. Writer. Commit propio.
@@ -60,7 +60,8 @@ Validación estricta (`version === 1`, `provider`/`modelId` strings no vacíos, 
 
 ## Evidencia RED/GREEN
 
-- Pendiente al iniciar T1.
+- **T1 (store)**: RED `node --test test/unit/summarizer-settings.test.mjs` → `ERR_MODULE_NOT_FOUND` del módulo; GREEN 39/39 en ese archivo. Suite completa: **271/271 en 20 suites** (baseline 232 + 39). Cubre archivo ausente/válido/corrupto, versión y claves inválidas, escritura atómica sin residuos, modos 0600/0700, rechazo de symlink, `settings.json` intacto, cadena de precedencia completa, par de env incompleto y defaults inmutables.
+- Pendiente: T2–T6.
 
 ## Log
 
