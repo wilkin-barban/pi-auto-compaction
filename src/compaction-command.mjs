@@ -8,27 +8,9 @@ export const MODEL_STATUS_KEY = "pi-auto-compaction-model";
 
 const SMALL_CONTEXT_WINDOW = 32000;
 
-export function formatTokenCount(value) {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    return "?";
-  }
-  return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-}
+import { describeModel, formatTokenCount, modelKey, modelRef, pickModel } from "./model-selector.mjs";
 
-export function modelRef(model) {
-  return { provider: model.provider, modelId: model.id ?? model.modelId };
-}
-
-export function modelKey(model) {
-  const { provider, modelId } = modelRef(model);
-  return `${provider}/${modelId}`;
-}
-
-export function describeModel(model) {
-  const { provider, modelId } = modelRef(model);
-  const name = typeof model.name === "string" && model.name.trim() ? model.name.trim() : modelId;
-  return `${provider}/${modelId} · ${name} · ctx ${formatTokenCount(model.contextWindow)} · max ${formatTokenCount(model.maxTokens)}`;
-}
+export { describeModel, formatTokenCount, modelKey, modelRef };
 
 /**
  * Lists the chat models the user can actually run: those with configured
@@ -90,9 +72,22 @@ function optionLabel(model, selected) {
 }
 
 /**
- * Selects one model through a list of labels. Returns undefined on cancel.
+ * Selects one model. In TUI mode this opens the scrollable, searchable picker
+ * built on `SelectList`; hosts without `ui.custom` fall back to the plain
+ * `ui.select` dialog, which has no scroll.
  */
-async function selectModel(ui, title, models, selected) {
+async function selectModel(ctx, models, { title, selected }) {
+  const ui = ctx?.ui;
+  const interactiveTui = (ctx?.mode === "tui" || ctx?.mode === "interactive") && typeof ui?.custom === "function";
+
+  if (interactiveTui) {
+    return pickModel(ctx, models, { title, selected });
+  }
+
+  if (!ui || typeof ui.select !== "function") {
+    return undefined;
+  }
+
   const labels = models.map((model) => optionLabel(model, selected));
   const choice = await ui.select(title, labels);
   if (choice === undefined || choice === null) {
@@ -133,13 +128,20 @@ async function runCompactionCommand(runtime, ctx) {
   const current = runtime.get();
   const currentKey = `${current.primaryModel.provider}/${current.primaryModel.modelId}`;
 
-  const primary = await selectModel(ui, "Modelo primario de la autocompactación", models, currentKey);
+  const primary = await selectModel(ctx, models, {
+    title: "Modelo primario de la autocompactación",
+    selected: currentKey,
+  });
   if (!primary) {
     ui.notify("Configuración cancelada: no se modificó el resumidor.", "info");
     return;
   }
 
-  const fallback = await selectModel(ui, "Modelo de respaldo de la autocompactación", models, undefined);
+  const currentFallbackKey = `${current.fallbackModel.provider}/${current.fallbackModel.modelId}`;
+  const fallback = await selectModel(ctx, models, {
+    title: "Modelo de respaldo de la autocompactación",
+    selected: currentFallbackKey,
+  });
   if (!fallback) {
     ui.notify("Configuración cancelada: no se modificó el resumidor.", "info");
     return;

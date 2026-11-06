@@ -14,6 +14,8 @@ import {
 } from "../../src/compaction-command.mjs";
 import { createRuntimeConfig } from "../../src/runtime-config.mjs";
 
+const tui = await import("@earendil-works/pi-tui");
+
 const PRIMARY = {
   provider: "antigravity",
   id: "gemini-3.8-flash-tiered",
@@ -325,5 +327,112 @@ describe("registerCompactionCommand", () => {
 
     assert.match(ui.notifications[0].message, /No se pudo guardar.*permiso denegado/);
     assert.equal(fs.existsSync(settingsPath), false);
+  });
+  it("uses the custom scrollable picker in TUI mode", async () => {
+    const pi = fakePi();
+    const runtime = createRuntimeConfig({ settingsPath, env: {} });
+    registerCompactionCommand(pi, runtime);
+
+    const titles = [];
+    const rowsSeen = [];
+    const ui = {
+      notifications: [],
+      notify(message, type) {
+        this.notifications.push({ message, type });
+      },
+      setStatus() {},
+      confirm: async () => true,
+      select: async () => {
+        throw new Error("ui.select must not be used in TUI mode");
+      },
+      custom: async (factory) => {
+        let resolveResult;
+        const promise = new Promise((resolve) => {
+          resolveResult = resolve;
+        });
+        const component = factory({ terminal: { rows: 24 } }, { fg: (color, text) => text }, {}, (value) => {
+          resolveResult(value);
+        });
+        rowsSeen.push(component.render(100).length);
+        const isPrimary = titles.length === 0;
+        titles.push("picker");
+        if (isPrimary) {
+          component.handleInput("model-119");
+          component.handleInput("\r");
+        } else {
+          component.handleInput("\x1b");
+        }
+        return promise;
+      },
+    };
+
+    const models = Array.from({ length: 120 }, (_, index) => ({
+      provider: `prov${index % 3}`,
+      id: `model-${String(index).padStart(3, "0")}`,
+      name: `Model ${index}`,
+      contextWindow: 1000000,
+      maxTokens: 8192,
+    }));
+
+    await pi.commands[0].definition.handler("", {
+      hasUI: true,
+      mode: "interactive",
+      ui,
+      modelRegistry: fakeRegistry(models),
+    });
+
+    assert.equal(ui.notifications[0].message, "Configuración cancelada: no se modificó el resumidor.");
+    assert.equal(rowsSeen.length, 2);
+    assert.ok(rowsSeen.every((rows) => rows <= 18));
+  });
+
+  it("saves through the custom picker when both selections are confirmed", async () => {
+    const pi = fakePi();
+    const runtime = createRuntimeConfig({ settingsPath, env: {} });
+    registerCompactionCommand(pi, runtime);
+
+    const selections = ["prov1/model-119", "prov2/model-118"];
+    let call = 0;
+    const ui = {
+      notifications: [],
+      notify(message, type) {
+        this.notifications.push({ message, type });
+      },
+      setStatus() {},
+      confirm: async () => true,
+      custom: async (factory) => {
+        let resolveResult;
+        const promise = new Promise((resolve) => {
+          resolveResult = resolve;
+        });
+        const component = factory({ terminal: { rows: 40 } }, { fg: (color, text) => text }, {}, (value) => {
+          resolveResult(value);
+        });
+        const wanted = selections[call++];
+        component.handleInput(wanted.slice(wanted.indexOf("/") + 1));
+        component.handleInput("\r");
+        return promise;
+      },
+    };
+
+    const models = Array.from({ length: 120 }, (_, index) => ({
+      provider: `prov${index % 3}`,
+      id: `model-${String(index).padStart(3, "0")}`,
+      name: `Model ${index}`,
+      contextWindow: 1000000,
+      maxTokens: 8192,
+    }));
+
+    await pi.commands[0].definition.handler("", {
+      hasUI: true,
+      mode: "interactive",
+      ui,
+      modelRegistry: fakeRegistry(models),
+    });
+
+    const saved = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+    assert.equal(saved.primary.modelId, "model-119");
+    assert.equal(saved.fallback.modelId, "model-118");
+    assert.match(ui.notifications.at(-1).message, /Se aplica en la próxima compactación/);
   });
 });
