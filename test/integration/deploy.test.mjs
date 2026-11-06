@@ -463,3 +463,265 @@ test("fixture teardown removes exact created temp directory even on simulated fa
   for (const hook of cleanupHooks) hook();
   assert.equal(fs.existsSync(createdBase), false, "fixture directory must be removed by teardown");
 });
+
+test("compensation preserves concurrent modifications within compaction settings byte-identical and retains journal", (t) => {
+  const f = fixture(t);
+  const oldSource = setupOccupiedAgent(f);
+  const beforeBytes = agentBytes(f);
+  let foreignSettingsBytes;
+
+  const run = (node, args, options) => {
+    if (args[0].endsWith("setup.mjs")) {
+      const res = spawnSync(node, args, options);
+      if (res.status !== 0) return res;
+      const settingsPath = path.join(f.agentDir, "settings.json");
+      const s = read(settingsPath);
+      s.compaction.foreignCompactionKey = "concurrent-foreign-compaction-value";
+      write(settingsPath, s);
+      foreignSettingsBytes = fs.readFileSync(settingsPath, "utf8");
+      return { status: 1, stdout: res.stdout, stderr: "synthetic after-setup failure" };
+    }
+    return spawnSync(node, args, options);
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { run }),
+    /Foreign modification|reconcil|synthetic after-setup/i,
+  );
+
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "settings.json"), "utf8"), foreignSettingsBytes);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "extensions", "omniroute-compaction.ts"), "utf8"), beforeBytes[2]);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, manifestName), "utf8"), beforeBytes[1]);
+  assert.equal(marker(f).state, "pending");
+  assert.ok(fs.readdirSync(path.join(f.installDir, "journals")).length >= 1);
+});
+
+test("compensation preserves concurrent foreign loader containing target path byte-identical and retains journal", (t) => {
+  const f = fixture(t);
+  const oldSource = setupOccupiedAgent(f);
+  const beforeBytes = agentBytes(f);
+  let foreignLoaderBytes;
+
+  const run = (node, args, options) => {
+    if (args[0].endsWith("setup.mjs")) {
+      const res = spawnSync(node, args, options);
+      if (res.status !== 0) return res;
+      const targetPath = args[args.indexOf("--source-dir") + 1];
+      const loaderPath = path.join(f.agentDir, "extensions", "omniroute-compaction.ts");
+      const foreignLoader = `// Foreign concurrent extension referencing ${targetPath}\nconsole.log("foreign injection");\n`;
+      fs.writeFileSync(loaderPath, foreignLoader, "utf8");
+      foreignLoaderBytes = foreignLoader;
+      return { status: 1, stdout: res.stdout, stderr: "synthetic after-setup failure" };
+    }
+    return spawnSync(node, args, options);
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { run }),
+    /Foreign modification|reconcil|synthetic after-setup/i,
+  );
+
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "extensions", "omniroute-compaction.ts"), "utf8"), foreignLoaderBytes);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "settings.json"), "utf8"), beforeBytes[0]);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, manifestName), "utf8"), beforeBytes[1]);
+  assert.equal(marker(f).state, "pending");
+  assert.ok(fs.readdirSync(path.join(f.installDir, "journals")).length >= 1);
+});
+
+test("compensation preserves concurrent foreign manifest baseline byte-identical and retains journal", (t) => {
+  const f = fixture(t);
+  const oldSource = setupOccupiedAgent(f);
+  const beforeBytes = agentBytes(f);
+  let foreignManifestBytes;
+
+  const run = (node, args, options) => {
+    if (args[0].endsWith("setup.mjs")) {
+      const res = spawnSync(node, args, options);
+      if (res.status !== 0) return res;
+      const manifestPath = path.join(f.agentDir, manifestName);
+      const m = read(manifestPath);
+      m.originalOverrides["openai/gpt-6-sol"].reserveTokens.value = 999999;
+      write(manifestPath, m);
+      foreignManifestBytes = fs.readFileSync(manifestPath, "utf8");
+      return { status: 1, stdout: res.stdout, stderr: "synthetic after-setup failure" };
+    }
+    return spawnSync(node, args, options);
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { run }),
+    /Foreign modification|reconcil|synthetic after-setup/i,
+  );
+
+  assert.equal(fs.readFileSync(path.join(f.agentDir, manifestName), "utf8"), foreignManifestBytes);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "settings.json"), "utf8"), beforeBytes[0]);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "extensions", "omniroute-compaction.ts"), "utf8"), beforeBytes[2]);
+  assert.equal(marker(f).state, "pending");
+  assert.ok(fs.readdirSync(path.join(f.installDir, "journals")).length >= 1);
+});
+
+test("foreign marker is preserved byte-exact and catch does not overwrite with pending", (t) => {
+  const f = fixture(t);
+  const oldSource = setupOccupiedAgent(f);
+  const beforeBytes = agentBytes(f);
+  let foreignMarkerBytes;
+
+  const run = (node, args, options) => {
+    if (args[0].endsWith("setup.mjs")) {
+      const res = spawnSync(node, args, options);
+      if (res.status !== 0) return res;
+      const markerPath = path.join(f.installDir, MARKER_FILENAME);
+      const m = read(markerPath);
+      m.foreignField = "concurrent-foreign-marker-value";
+      m.state = "custom-foreign-state";
+      write(markerPath, m);
+      foreignMarkerBytes = fs.readFileSync(markerPath, "utf8");
+      return { status: 1, stdout: res.stdout, stderr: "synthetic after-setup failure" };
+    }
+    return spawnSync(node, args, options);
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { run }),
+    /Metadata drift|reconcil|synthetic after-setup/i,
+  );
+
+  assert.equal(fs.readFileSync(path.join(f.installDir, MARKER_FILENAME), "utf8"), foreignMarkerBytes);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "settings.json"), "utf8"), beforeBytes[0]);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "extensions", "omniroute-compaction.ts"), "utf8"), beforeBytes[2]);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, manifestName), "utf8"), beforeBytes[1]);
+  assert.ok(fs.readdirSync(path.join(f.installDir, "journals")).length >= 1);
+});
+
+test("post-publication mutation of baseline fails closed, preserves foreign manifest and retains pending journal", (t) => {
+  const f = fixture(t);
+  setupOccupiedAgent(f);
+  let foreignManifestBytes;
+
+  const commit = (markerPath, next) => {
+    fs.writeFileSync(markerPath, JSON.stringify(next, null, 2));
+    const manifestPath = path.join(f.agentDir, manifestName);
+    const m = read(manifestPath);
+    m.originalOverrides["openai/gpt-6-sol"].reserveTokens.value = 888888;
+    write(manifestPath, m);
+    foreignManifestBytes = fs.readFileSync(manifestPath, "utf8");
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { commit }),
+    /baseline|drift|reconcil|corrupt/i,
+  );
+
+  assert.equal(fs.readFileSync(path.join(f.agentDir, manifestName), "utf8"), foreignManifestBytes);
+  assert.equal(marker(f).state, "pending");
+  assert.ok(fs.readdirSync(path.join(f.installDir, "journals")).length >= 1);
+});
+
+test("compensation preserves concurrent foreign manifest timestamp mutation within window, byte-identical and retains journal", (t) => {
+  const f = fixture(t);
+  const oldSource = setupOccupiedAgent(f);
+  const beforeBytes = agentBytes(f);
+  let foreignManifestBytes;
+
+  const run = (node, args, options) => {
+    if (args[0].endsWith("setup.mjs")) {
+      const res = spawnSync(node, args, options);
+      if (res.status !== 0) return res;
+      const manifestPath = path.join(f.agentDir, manifestName);
+      const m = read(manifestPath);
+      m.installedAt = new Date(Date.parse(m.installedAt) + 1000).toISOString();
+      write(manifestPath, m);
+      foreignManifestBytes = fs.readFileSync(manifestPath, "utf8");
+      return { status: 1, stdout: res.stdout, stderr: "synthetic after-setup failure" };
+    }
+    return spawnSync(node, args, options);
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { run }),
+    /Foreign modification|reconcil|synthetic after-setup/i,
+  );
+
+  assert.equal(fs.readFileSync(path.join(f.agentDir, manifestName), "utf8"), foreignManifestBytes);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "settings.json"), "utf8"), beforeBytes[0]);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "extensions", "omniroute-compaction.ts"), "utf8"), beforeBytes[2]);
+  assert.equal(marker(f).state, "pending");
+  assert.ok(fs.readdirSync(path.join(f.installDir, "journals")).length >= 1);
+});
+
+test("postcommit unknown manifest field fails closed, preserves foreign manifest and retains pending journal", (t) => {
+  const f = fixture(t);
+  setupOccupiedAgent(f);
+  let foreignManifestBytes;
+
+  const commit = (markerPath, next) => {
+    fs.writeFileSync(markerPath, JSON.stringify(next, null, 2));
+    const manifestPath = path.join(f.agentDir, manifestName);
+    const m = read(manifestPath);
+    m.unauthorizedField = "foreign-metadata-addition";
+    write(manifestPath, m);
+    foreignManifestBytes = fs.readFileSync(manifestPath, "utf8");
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { commit }),
+    /schema|unknown|drift|corrupt|reconcil/i,
+  );
+
+  assert.equal(fs.readFileSync(path.join(f.agentDir, manifestName), "utf8"), foreignManifestBytes);
+  assert.equal(marker(f).state, "pending");
+  assert.ok(fs.readdirSync(path.join(f.installDir, "journals")).length >= 1);
+});
+
+test("postcommit foreign marker mutation fails closed, preserves foreign marker byte-identical and retains pending journal", (t) => {
+  const f = fixture(t);
+  setupOccupiedAgent(f);
+  let foreignMarkerBytes;
+
+  const commit = (markerPath, next) => {
+    const tampered = { ...next, foreignField: "unauthorized-marker-mutation", state: "foreign-state" };
+    fs.writeFileSync(markerPath, JSON.stringify(tampered, null, 2));
+    foreignMarkerBytes = fs.readFileSync(markerPath, "utf8");
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { commit }),
+    /marker|drift|corrupt|schema|reconcil/i,
+  );
+
+  assert.equal(fs.readFileSync(path.join(f.installDir, MARKER_FILENAME), "utf8"), foreignMarkerBytes);
+  assert.ok(fs.readdirSync(path.join(f.installDir, "journals")).length >= 1);
+});
+
+test("compensation preserves equivalent ISO timestamp format foreign manifest mutation, byte-identical and retains journal", (t) => {
+  const f = fixture(t);
+  const oldSource = setupOccupiedAgent(f);
+  const beforeBytes = agentBytes(f);
+  let foreignManifestBytes;
+
+  const run = (node, args, options) => {
+    if (args[0].endsWith("setup.mjs")) {
+      const res = spawnSync(node, args, options);
+      if (res.status !== 0) return res;
+      const manifestPath = path.join(f.agentDir, manifestName);
+      const m = read(manifestPath);
+      m.installedAt = m.installedAt.replace("Z", "+00:00");
+      write(manifestPath, m);
+      foreignManifestBytes = fs.readFileSync(manifestPath, "utf8");
+      return { status: 1, stdout: res.stdout, stderr: "synthetic after-setup failure" };
+    }
+    return spawnSync(node, args, options);
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { run }),
+    /Foreign modification|reconcil|synthetic after-setup/i,
+  );
+
+  assert.equal(fs.readFileSync(path.join(f.agentDir, manifestName), "utf8"), foreignManifestBytes);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "settings.json"), "utf8"), beforeBytes[0]);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "extensions", "omniroute-compaction.ts"), "utf8"), beforeBytes[2]);
+  assert.equal(marker(f).state, "pending");
+  assert.ok(fs.readdirSync(path.join(f.installDir, "journals")).length >= 1);
+});
+
