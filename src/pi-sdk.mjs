@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SDK_PACKAGE = "@earendil-works/pi-coding-agent";
 const AI_PACKAGE = "@earendil-works/pi-ai";
+const TUI_PACKAGE = "@earendil-works/pi-tui";
 let sdkPromise;
 let sdkEntry;
 
@@ -114,6 +115,30 @@ export async function loadPiAI(subpath = "") {
     directory = parent;
   }
   throw new Error(`Failed to resolve ${AI_PACKAGE} beside the selected Pi SDK`);
+}
+
+export async function loadPiTUI() {
+  // Deployed releases have no node_modules: resolve beside the selected SDK the
+  // same way the AI helpers do, after trying the extension's own search path.
+  const specifier = ["@earendil-works", "pi-tui"].join("/");
+  try {
+    return await import(specifier);
+  } catch {
+    // Fall through to the SDK-relative resolution.
+  }
+
+  await loadPiSDK();
+  let directory = path.dirname(fileURLToPath(sdkEntry));
+  while (true) {
+    const candidate = path.join(directory, "node_modules", TUI_PACKAGE);
+    if (fs.existsSync(path.join(candidate, "package.json"))) {
+      return import(packageExport(candidate));
+    }
+    const parent = path.dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  throw new Error(`Failed to resolve ${TUI_PACKAGE} beside the selected Pi SDK`);
 }
 
 const sdk = await loadPiSDK();
