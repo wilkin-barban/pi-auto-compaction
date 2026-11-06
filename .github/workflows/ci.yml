@@ -37,3 +37,29 @@ jobs:
 
       - name: Run test suite
         run: npm test
+
+  compat-pi-1.5:
+    name: Pi 1.5.0 compatibility smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies (clean, ignore scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Install the Pi SDK version that production runs
+        run: >-
+          npm install --no-save
+          @earendil-works/pi-coding-agent@1.5.0
+          @earendil-works/pi-ai@1.5.0
+
+      - name: Run compatibility smoke
+        run: node scripts/compat/pi-1.5.0-smoke.mjs
