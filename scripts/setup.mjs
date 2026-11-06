@@ -19,6 +19,11 @@ import {
   takeSnapshot,
   verifySnapshot,
   checkDriftOnReinstall,
+  expectedLoaderContent,
+  applyManagedSettings,
+  buildManifest,
+  createSetupReceipt,
+  formatSetupReceipt,
 } from "../src/install-state.mjs";
 
 export {
@@ -145,56 +150,46 @@ export function runSetup(options = {}) {
     }
 
     // 6. Generate loader content
-    const entrySpecifier = JSON.stringify(path.join(packageSourceDir, "index.mjs"));
-    const loaderContent = `// Managed loader for pi-auto-compaction
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-
-export default async function (pi: ExtensionAPI) {
-  try {
-    const ext = await import(${entrySpecifier});
-    const factory = ext.default || ext.autoCompactionExtension;
-    if (typeof factory === "function") {
-      factory(pi);
-    }
-  } catch (err) {
-    console.error("[pi-auto-compaction] Failed to load durable extension:", err);
-  }
-}
-`;
+    const loaderContent = expectedLoaderContent(packageSourceDir);
     const loaderHash = hashContent(loaderContent);
 
     // 7. Merge model overrides preserving custom extra keys
-    const updatedOverrides = { ...currentOverrides };
-    for (const modelId of MANAGED_MODELS) {
-      const existingModelObj = updatedOverrides[modelId] || {};
-      updatedOverrides[modelId] = {
-        ...existingModelObj,
-        ...EXPECTED_MANAGED_VALUES,
-      };
-    }
-
-    const updatedSettings = {
-      ...existingSettings,
-      compaction: {
-        ...currentCompaction,
-        modelOverrides: updatedOverrides,
-      },
-    };
+    const updatedSettings = applyManagedSettings(existingSettings);
     const updatedSettingsContent = `${JSON.stringify(updatedSettings, null, 2)}\n`;
 
-    // Validate captured baselines before backups, journal writes, or dry-run approval.
-    const newManifest = {
-      version: EXPECTED_MANIFEST_VERSION,
-      installedAt: new Date().toISOString(),
+    // 7b. Intended manifest and receipt computed BEFORE any file writes
+    const installedAt = new Date().toISOString();
+    const newManifest = buildManifest({
+      installedAt,
       packageSourceDir,
-      managedModels: [...MANAGED_MODELS],
-      expectedManagedValues: { ...EXPECTED_MANAGED_VALUES },
       originalOverrides,
       loaderPath,
       loaderHash,
-    };
+    });
     validateManifest(newManifest, "manifest", loaderPath);
     const newManifestContent = `${JSON.stringify(newManifest, null, 2)}\n`;
+    const manifestHash = hashContent(newManifestContent);
+    const settingsHash = hashContent(updatedSettingsContent);
+
+    let receipt = null;
+    if (options.receiptNonce) {
+      receipt = createSetupReceipt({
+        nonce: options.receiptNonce,
+        targetDir: agentDir,
+        packageSourceDir,
+        installedAt,
+        manifestHash,
+        loaderHash,
+        settingsHash,
+      });
+    }
+
+    if (typeof options.onReceipt === "function" && receipt) {
+      options.onReceipt(receipt);
+    }
+    if (receipt) {
+      process.stdout.write(formatSetupReceipt(receipt));
+    }
 
     // 8. Snapshot state before commit
     const snapshot = takeSnapshot({
@@ -338,6 +333,7 @@ export default async function (pi: ExtensionAPI) {
       backupCreated: Boolean(backupFile),
       backupFile,
       modelsUpdated: [...MANAGED_MODELS],
+      receipt,
     };
   } finally {
     releaseLock(lockPath);
@@ -350,6 +346,7 @@ export function parseSetupArgs(args) {
     allowDisabled: false,
     agentDir: undefined,
     packageSourceDir: undefined,
+    receiptNonce: undefined,
   };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -370,6 +367,13 @@ export function parseSetupArgs(args) {
         throw new Error("Missing value for --source-dir");
       }
       parsed.packageSourceDir = val;
+      i++;
+    } else if (arg === "--receipt-nonce") {
+      const val = args[i + 1];
+      if (!val || val.startsWith("--")) {
+        throw new Error("Missing value for --receipt-nonce");
+      }
+      parsed.receiptNonce = val;
       i++;
     }
   }
