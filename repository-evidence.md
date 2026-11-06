@@ -494,7 +494,8 @@ Disciplina TDD: T1 y T2 observaron RED antes de GREEN. T3 observó RED por un fi
 
 | Comprobación | Comando | Resultado |
 |---|---|---|
-| Suite completa | `npm test` | `# tests 322`, `# suites 31`, `# pass 322`, `# fail 0` |
+| Suite completa | `npm test` | `# tests 326`, `# suites 33`, `# pass 326`, `# fail 0` |
+| Resolución de `pi-tui` en el release | `loadPiTUI()` desde el release desplegado | Falla detectada en vivo: `@earendil-works/pi-tui` declara `main` sin `exports`, y `packageExport` exigía `exports[".""]`. Corregido con `packageEntry` (exports o `main`), cubierto por `test/unit/pi-sdk-tui.test.mjs` 4/4 |
 | Selector de modelos | `node --test test/unit/model-selector.test.mjs` | 17/17: exports de primitivas de TUI, filtro incremental determinista, formateo de items y labels descriptivos, cálculo de `maxVisible` según filas de terminal, render acotado de 100+ modelos con scroll info, búsqueda en vivo y `"Sin coincidencias"`, preselección por valor actual, navegación por flechas, cancelación por Escape, aplicación de temas y fallback de host |
 | Integración en `/compaction` | `node --test test/unit/compaction-command.test.mjs` | 17/17: selector interactivo en TUI con preselección de primario y respaldo, guardado con selector custom, fallback a `ui.select` en entornos sin UI personalizada y validaciones completas |
 

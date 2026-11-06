@@ -117,6 +117,23 @@ export async function loadPiAI(subpath = "") {
   throw new Error(`Failed to resolve ${AI_PACKAGE} beside the selected Pi SDK`);
 }
 
+// Packages such as @earendil-works/pi-tui ship `main` without `exports`, so the
+// SDK helper cannot resolve them. Keep both shapes working.
+export function packageEntry(packageRoot) {
+  const metadata = JSON.parse(fs.readFileSync(path.join(packageRoot, "package.json"), "utf8"));
+  if (metadata.exports !== undefined) {
+    return import(packageExport(packageRoot));
+  }
+  if (typeof metadata.main !== "string") {
+    throw new Error(`No entry point in ${metadata.name}`);
+  }
+  const target = path.resolve(packageRoot, metadata.main);
+  if (!target.startsWith(`${path.resolve(packageRoot)}${path.sep}`)) {
+    throw new Error(`Invalid entry point in ${metadata.name}`);
+  }
+  return import(pathToFileURL(target).href);
+}
+
 export async function loadPiTUI() {
   // Deployed releases have no node_modules: resolve beside the selected SDK the
   // same way the AI helpers do, after trying the extension's own search path.
@@ -132,7 +149,7 @@ export async function loadPiTUI() {
   while (true) {
     const candidate = path.join(directory, "node_modules", TUI_PACKAGE);
     if (fs.existsSync(path.join(candidate, "package.json"))) {
-      return import(packageExport(candidate));
+      return await packageEntry(candidate);
     }
     const parent = path.dirname(directory);
     if (parent === directory) break;
