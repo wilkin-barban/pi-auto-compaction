@@ -565,6 +565,7 @@ describe("summarizer-settings module", () => {
 
     it("options passed directly as top-level arguments are supported", () => {
       const result = resolveSummarizerSettings({
+        settingsPath: path.join(tempDir, "absent-direct.json"),
         primary: { provider: "direct-p", modelId: "direct-m" },
         env: {},
       });
@@ -602,8 +603,9 @@ describe("summarizer-settings module", () => {
     });
 
     it("resolving twice does not mutate defaults", () => {
-      const first = resolveSummarizerSettings({ env: {} });
-      const second = resolveSummarizerSettings({ env: {} });
+      const absent = path.join(tempDir, "absent-twice.json");
+      const first = resolveSummarizerSettings({ settingsPath: absent, env: {} });
+      const second = resolveSummarizerSettings({ settingsPath: absent, env: {} });
 
       assert.deepEqual(first.primary, DEFAULT_EFFECTIVE_SUMMARIZER.primary);
       assert.deepEqual(second.primary, DEFAULT_EFFECTIVE_SUMMARIZER.primary);

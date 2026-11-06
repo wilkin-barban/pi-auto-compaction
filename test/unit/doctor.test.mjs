@@ -560,7 +560,7 @@ describe("doctor module", () => {
     }
 
     function baseOptions() {
-      return { agentDir, installDir, telemetryPath: telemetryFile };
+      return { agentDir, installDir, telemetryPath: telemetryFile, settingsPath: summarizerPath() };
     }
 
     it("reports defaults with no settings file", () => {

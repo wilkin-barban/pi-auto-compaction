@@ -21,7 +21,7 @@
     "doctor": "node scripts/doctor.mjs",
     "rollback": "node scripts/rollback.mjs",
     "setup": "node scripts/setup.mjs",
-    "test": "node --test"
+    "test": "node --import ./test/env-isolation.mjs --test"
   },
   "keywords": [
     "pi",
