@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { resolveConfig } from "./config.mjs";
+import { createRuntimeConfig } from "./runtime-config.mjs";
 import { TelemetryLogger } from "./telemetry.mjs";
 import { UiManager } from "./ui-manager.mjs";
 import { classifyError } from "./errors.mjs";
@@ -135,12 +135,14 @@ export function resolveConversationContext(ctx, options = {}) {
 }
 
 export function autoCompactionExtension(pi, options = {}) {
-  const config = resolveConfig(options);
-  const telemetry = new TelemetryLogger(config);
+  const runtime = createRuntimeConfig(options);
+  const telemetry = new TelemetryLogger(runtime.get());
   let activeUi = null;
   let activeCycle = null;
 
   pi.on("session_before_compact", async (event, ctx) => {
+    // Snapshot the live configuration so a mid-cycle update never mixes models.
+    const config = runtime.get();
     const { preparation, branchEntries, customInstructions, reason, willRetry, signal } = event;
 
     if (signal?.aborted) {

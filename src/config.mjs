@@ -1,6 +1,8 @@
 import os from "node:os";
 import path from "node:path";
 
+import { resolveSummarizerSettings } from "./summarizer-settings.mjs";
+
 export const DEFAULT_CONFIG = Object.freeze({
   primaryModel: Object.freeze({
     provider: "omniroute",
@@ -91,4 +93,42 @@ export function resolveConfig(options = {}) {
   }
 
   return merged;
+}
+
+/**
+ * Resolves the effective runtime configuration by layering the persisted
+ * summarizer settings under any explicit options. `resolveConfig` stays a pure
+ * function with no filesystem access; this is the only resolver that reads the
+ * settings file.
+ */
+export function resolveActiveConfig(options = {}) {
+  const summarizer = resolveSummarizerSettings({
+    settingsPath: options.settingsPath,
+    agentDir: options.agentDir,
+    env: options.env,
+    options: {
+      primaryModel: options.primaryModel,
+      fallbackModel: options.fallbackModel,
+    },
+  });
+
+  const config = resolveConfig({
+    ...options,
+    primaryModel: summarizer.primaryModel,
+    fallbackModel: summarizer.fallbackModel,
+  });
+
+  delete config.env;
+  delete config.settingsPath;
+  delete config.agentDir;
+
+  return {
+    ...config,
+    summarizer: Object.freeze({
+      path: summarizer.path,
+      source: summarizer.source,
+      sources: summarizer.sources,
+      warnings: Object.freeze([...summarizer.warnings]),
+    }),
+  };
 }
