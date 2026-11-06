@@ -96,7 +96,7 @@ test("fresh copy, update, idempotency and source rollback preserve the original 
   fs.writeFileSync(path.join(f.sourceDir, "ignored-runtime.json"), "synthetic private fixture");
   const first = runDeploy(f);
   const baseline = manifest(f).originalOverrides;
-  assert.equal(Object.keys(manifest(f).originalOverrides).length, 4);
+  assert.equal(Object.keys(manifest(f).originalOverrides).length, 8);
   assert.equal(manifest(f).packageSourceDir, first.releaseDir);
   assert.deepEqual(fs.readdirSync(first.releaseDir).sort(), [".release.json", "README.md", "index.mjs", "package.json", "scripts", "src"]);
   const bytes = agentBytes(f);
@@ -958,7 +958,7 @@ test("fresh deployment without settings succeeds via actual CLI on entirely abse
     assert.equal(m.pending, null);
     // All 4 original overrides absent: present=false, reserve+keep present=false
     const mf = read(path.join(f.agentDir, manifestName));
-    assert.equal(Object.keys(mf.originalOverrides).length, 4);
+    assert.equal(Object.keys(mf.originalOverrides).length, 8);
     for (const modelId of Object.keys(mf.originalOverrides)) {
       assert.equal(mf.originalOverrides[modelId].present, false);
       assert.equal(mf.originalOverrides[modelId].reserveTokens.present, false);

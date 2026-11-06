@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
-  MANAGED_MODELS, EXPECTED_MANAGED_VALUES, EXPECTED_MANIFEST_VERSION,
+  MANAGED_MODELS, MANAGED_POLICIES, MANIFEST_VERSION_V1, MANIFEST_VERSION_V2, EXPECTED_MANIFEST_VERSION,
   MANIFEST_FILENAME, STATE_DIRNAME, JOURNAL_FILENAME, LOCK_FILENAME,
   validateManifest, validateSettings, checkDriftOnReinstall,
   parseAndValidateReceipt,
@@ -62,11 +62,12 @@ function expectedSettings(beforeSettings) {
   const currentCompaction = beforeSettings.compaction || {};
   const currentOverrides = currentCompaction.modelOverrides || {};
   const updatedOverrides = { ...currentOverrides };
-  for (const modelId of MANAGED_MODELS) {
+  for (const [modelId, policy] of Object.entries(MANAGED_POLICIES)) {
     const existingModelObj = updatedOverrides[modelId] || {};
     updatedOverrides[modelId] = {
       ...existingModelObj,
-      ...EXPECTED_MANAGED_VALUES,
+      reserveTokens: policy.reserveTokens,
+      keepRecentTokens: policy.keepRecentTokens,
     };
   }
   return {
@@ -77,26 +78,32 @@ function expectedSettings(beforeSettings) {
     },
   };
 }
+function baselinesMatch(originalManifest, installedManifest) {
+  if (!originalManifest || !installedManifest) return true;
+  if (originalManifest.version === installedManifest.version) {
+    return JSON.stringify(installedManifest.originalOverrides) === JSON.stringify(originalManifest.originalOverrides);
+  }
+  if (originalManifest.version === MANIFEST_VERSION_V1 && installedManifest.version === MANIFEST_VERSION_V2) {
+    for (const [model, baseline] of Object.entries(originalManifest.originalOverrides)) {
+      if (JSON.stringify(installedManifest.originalOverrides[model]) !== JSON.stringify(baseline)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  return false;
+}
 function isOwnManifest(liveManifest, targetPath, expectedLoaderPath, expectedOriginalOverrides, agentDir, setupStartTime) {
   if (!liveManifest || typeof liveManifest !== "object" || Array.isArray(liveManifest)) return false;
-  const expectedKeys = [
-    "expectedManagedValues",
-    "installedAt",
-    "loaderHash",
-    "loaderPath",
-    "managedModels",
-    "originalOverrides",
-    "packageSourceDir",
-    "version",
-  ];
-  if (Object.keys(liveManifest).sort().join() !== expectedKeys.sort().join()) return false;
-  if (liveManifest.version !== EXPECTED_MANIFEST_VERSION) return false;
+  try {
+    validateManifest(liveManifest, "manifest", expectedLoaderPath);
+  } catch {
+    return false;
+  }
   if (liveManifest.packageSourceDir !== targetPath) return false;
   if (liveManifest.loaderPath !== expectedLoaderPath) return false;
   if (liveManifest.loaderHash !== hash(expectedLoader(targetPath))) return false;
-  if (JSON.stringify(liveManifest.managedModels) !== JSON.stringify([...MANAGED_MODELS])) return false;
-  if (JSON.stringify(liveManifest.expectedManagedValues) !== JSON.stringify(EXPECTED_MANAGED_VALUES)) return false;
-  if (expectedOriginalOverrides && JSON.stringify(liveManifest.originalOverrides) !== JSON.stringify(expectedOriginalOverrides)) return false;
+  if (expectedOriginalOverrides && !baselinesMatch({ originalOverrides: expectedOriginalOverrides, version: liveManifest.version }, liveManifest)) return false;
   if (typeof liveManifest.installedAt !== "string" || isNaN(Date.parse(liveManifest.installedAt))) return false;
 
   const parsedInstalledAt = Date.parse(liveManifest.installedAt);
@@ -241,16 +248,6 @@ function agentState(agent, current, options = {}) {
       owned(loader);
       const manifest = readJSON(manifestPath);
       validateManifest(manifest, "agent manifest", loader);
-      exact(manifest, [
-        "expectedManagedValues",
-        "installedAt",
-        "loaderHash",
-        "loaderPath",
-        "managedModels",
-        "originalOverrides",
-        "packageSourceDir",
-        "version",
-      ], "agent manifest");
       const oldSource = safePath(manifest.packageSourceDir);
       owned(oldSource, true);
       owned(path.join(oldSource, "index.mjs"));
@@ -269,16 +266,6 @@ function agentState(agent, current, options = {}) {
   owned(loader);
   const manifest = readJSON(manifestPath);
   validateManifest(manifest, "agent manifest", loader);
-  exact(manifest, [
-    "expectedManagedValues",
-    "installedAt",
-    "loaderHash",
-    "loaderPath",
-    "managedModels",
-    "originalOverrides",
-    "packageSourceDir",
-    "version",
-  ], "agent manifest");
   if (manifest.packageSourceDir !== current.path) fail("Agent manifest source ownership mismatch");
   checkDriftOnReinstall(settings, manifest, loader);
   return manifest;
@@ -445,7 +432,7 @@ export function runDeploy(options = {}, dependencies = {}) {
       }
 
       const installed = agentState(agent, target);
-      if (original && JSON.stringify(installed.originalOverrides) !== JSON.stringify(original.originalOverrides)) fail("Setup changed original baseline");
+      if (original && !baselinesMatch(original, installed)) fail("Setup changed original baseline");
       const currentSettings = readJSON(path.join(agent, "settings.json"));
       const beforeSettings = before[0] === null ? {} : JSON.parse(before[0]);
       for (const [k, v] of Object.entries(beforeSettings)) {
@@ -478,7 +465,7 @@ export function runDeploy(options = {}, dependencies = {}) {
       validateMarker(postMarker, root, agent);
 
       const postInstall = agentState(agent, target);
-      if (original && JSON.stringify(postInstall.originalOverrides) !== JSON.stringify(original.originalOverrides)) {
+      if (original && !baselinesMatch(original, postInstall)) {
         fail("Baseline drift detected during metadata publication");
       }
       if (before[0]) {
@@ -508,7 +495,7 @@ export function runDeploy(options = {}, dependencies = {}) {
         if (JSON.stringify(snapshot(agent)) !== JSON.stringify(before)) {
           if (prior.current) {
             const installed = agentState(agent, target);
-            if (original && JSON.stringify(installed.originalOverrides) !== JSON.stringify(original.originalOverrides)) fail("Baseline drift during compensation");
+            if (original && !baselinesMatch(original, installed)) fail("Baseline drift during compensation");
             verifyRelease(prior.current, root, run);
             childSetup(prior.current, agent, run);
             agentState(agent, prior.current);

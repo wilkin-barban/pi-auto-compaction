@@ -9,7 +9,7 @@ import {
   validateManifest,
   checkDriftOnRollback,
   MANAGED_MODELS,
-  EXPECTED_MANAGED_VALUES,
+  MANAGED_POLICIES,
   EXPECTED_MANIFEST_VERSION,
   hashContent,
   parseAndValidateReceipt,
@@ -134,7 +134,7 @@ describe("deployment scripts module", () => {
     ["absent originalEmpty true", (m) => { m.originalOverrides[MANAGED_MODELS[1]].originalEmpty = true; }],
     ["extra baseline model", (m) => { m.originalOverrides["foreign/model"] = {}; }],
     ["duplicate managed model", (m) => { m.managedModels[1] = m.managedModels[0]; }],
-    ["unsupported version", (m) => { m.version = "2.0.0"; }],
+    ["unsupported version", (m) => { m.version = "9.9.9"; }],
     ["invalid ownership hash", (m) => { m.loaderHash = "bad"; }],
     ["foreign ownership path", (m) => { m.loaderPath = path.join(tempHome, "foreign-loader.ts"); }],
   ]) {
@@ -552,7 +552,7 @@ describe("deployment scripts module", () => {
     assert.throws(() => runSetup({ agentDir: targetAgentDir, packageSourceDir: mockPkgSourceDir }), /manifest/i);
 
     // Case d: unknown version
-    fs.writeFileSync(manifestPath, JSON.stringify({ version: "2.0.0", managedModels: ["openai/gpt-6-sol"], originalOverrides: {}, loaderHash: "abc" }));
+    fs.writeFileSync(manifestPath, JSON.stringify({ version: "9.9.9", managedModels: ["openai/gpt-6-sol"], originalOverrides: {}, loaderHash: "abc" }));
     assert.throws(() => runSetup({ agentDir: targetAgentDir, packageSourceDir: mockPkgSourceDir }), /manifest|version/i);
   });
 
@@ -847,6 +847,26 @@ describe("deployment scripts module", () => {
 
   it("manifest validation enforces complete strict baseline schema rejecting invalid hashes, paths, targets and token values", () => {
     const validLoaderHash = "a".repeat(64);
+    const policies = {};
+    const originalOverrides = {};
+    for (const m of MANAGED_MODELS) {
+      policies[m] = { ...MANAGED_POLICIES[m] };
+      originalOverrides[m] = {
+        present: false,
+        reserveTokens: { present: false, value: undefined },
+        keepRecentTokens: { present: false, value: undefined },
+        originalEmpty: false,
+        value: null,
+      };
+    }
+    originalOverrides["openai-codex/gpt-6-sol"] = {
+      present: true,
+      reserveTokens: { present: true, value: 30000 },
+      keepRecentTokens: { present: false, value: undefined },
+      originalEmpty: false,
+      value: { reserveTokens: 30000 },
+    };
+
     const validManifest = {
       version: EXPECTED_MANIFEST_VERSION,
       installedAt: new Date().toISOString(),
@@ -854,37 +874,8 @@ describe("deployment scripts module", () => {
       loaderPath: path.join(targetAgentDir, "extensions", "omniroute-compaction.ts"),
       loaderHash: validLoaderHash,
       managedModels: [...MANAGED_MODELS],
-      expectedManagedValues: { ...EXPECTED_MANAGED_VALUES },
-      originalOverrides: {
-        "openai-codex/gpt-6-sol": {
-          present: true,
-          reserveTokens: { present: true, value: 30000 },
-          keepRecentTokens: { present: false, value: undefined },
-          originalEmpty: false,
-          value: { reserveTokens: 30000 },
-        },
-        "openai-codex/gpt-6.1-sol": {
-          present: false,
-          reserveTokens: { present: false, value: undefined },
-          keepRecentTokens: { present: false, value: undefined },
-          originalEmpty: false,
-          value: null,
-        },
-        "openai/gpt-6-sol": {
-          present: false,
-          reserveTokens: { present: false, value: undefined },
-          keepRecentTokens: { present: false, value: undefined },
-          originalEmpty: false,
-          value: null,
-        },
-        "openai/gpt-6.1-sol": {
-          present: false,
-          reserveTokens: { present: false, value: undefined },
-          keepRecentTokens: { present: false, value: undefined },
-          originalEmpty: false,
-          value: null,
-        },
-      },
+      policies,
+      originalOverrides,
     };
 
     // Valid manifest must not throw
@@ -1000,7 +991,7 @@ describe("deployment scripts module", () => {
     const s2 = JSON.parse(fs.readFileSync(settingsFile, "utf-8"));
     s2.compaction.modelOverrides = {};
     for (const m of MANAGED_MODELS) {
-      s2.compaction.modelOverrides[m] = { ...EXPECTED_MANAGED_VALUES };
+      s2.compaction.modelOverrides[m] = { ...MANAGED_POLICIES[m] };
     }
     delete s2.compaction.modelOverrides["openai-codex/gpt-6-sol"];
     fs.writeFileSync(settingsFile, JSON.stringify(s2, null, 2));
@@ -1008,14 +999,14 @@ describe("deployment scripts module", () => {
 
     // Restore and Case c: owned field reserveTokens removed (undefined)
     const s3 = JSON.parse(fs.readFileSync(settingsFile, "utf-8"));
-    s3.compaction.modelOverrides["openai-codex/gpt-6-sol"] = { ...EXPECTED_MANAGED_VALUES };
+    s3.compaction.modelOverrides["openai-codex/gpt-6-sol"] = { ...MANAGED_POLICIES["openai-codex/gpt-6-sol"] };
     delete s3.compaction.modelOverrides["openai-codex/gpt-6-sol"].reserveTokens;
     fs.writeFileSync(settingsFile, JSON.stringify(s3, null, 2));
     assert.throws(() => runRollback({ agentDir: targetAgentDir }), /drift|reserveTokens/i);
 
     // Restore and Case d: owned field keepRecentTokens removed (undefined)
     const s4 = JSON.parse(fs.readFileSync(settingsFile, "utf-8"));
-    s4.compaction.modelOverrides["openai-codex/gpt-6-sol"].reserveTokens = EXPECTED_MANAGED_VALUES.reserveTokens;
+    s4.compaction.modelOverrides["openai-codex/gpt-6-sol"].reserveTokens = MANAGED_POLICIES["openai-codex/gpt-6-sol"].reserveTokens;
     delete s4.compaction.modelOverrides["openai-codex/gpt-6-sol"].keepRecentTokens;
     fs.writeFileSync(settingsFile, JSON.stringify(s4, null, 2));
     assert.throws(() => runRollback({ agentDir: targetAgentDir }), /drift|keepRecentTokens/i);

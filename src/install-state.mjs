@@ -3,23 +3,39 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 
-export const MANAGED_MODELS = Object.freeze([
+export const MANAGED_POLICIES = Object.freeze({
+  "openai-codex/gpt-6-sol": Object.freeze({ reserveTokens: 65536, keepRecentTokens: 20000 }),
+  "openai-codex/gpt-6.1-sol": Object.freeze({ reserveTokens: 65536, keepRecentTokens: 20000 }),
+  "openai/gpt-6-sol": Object.freeze({ reserveTokens: 65536, keepRecentTokens: 20000 }),
+  "openai/gpt-6.1-sol": Object.freeze({ reserveTokens: 65536, keepRecentTokens: 20000 }),
+  "commandcode/deepseek/deepseek-v4.1-flash": Object.freeze({ reserveTokens: 140000, keepRecentTokens: 20000 }),
+  "deepseek/deepseek-v4.1-flash": Object.freeze({ reserveTokens: 140000, keepRecentTokens: 20000 }),
+  "omniroute/antigravity/gemini-3.8-flash-tiered": Object.freeze({ reserveTokens: 200000, keepRecentTokens: 20000 }),
+  "antigravity/gemini-3.8-flash-tiered": Object.freeze({ reserveTokens: 200000, keepRecentTokens: 20000 }),
+});
+
+export const MANAGED_MODELS = Object.freeze(Object.keys(MANAGED_POLICIES));
+
+export const MANIFEST_FILENAME = ".pi-auto-compaction-manifest.json";
+export const STATE_DIRNAME = ".pi-auto-compaction-state";
+export const LOCK_FILENAME = ".pi-auto-compaction.lock";
+export const JOURNAL_FILENAME = "recovery-journal.json";
+
+export const MANIFEST_VERSION_V1 = "1.0.0";
+export const MANIFEST_VERSION_V2 = "2.0.0";
+export const EXPECTED_MANIFEST_VERSION = MANIFEST_VERSION_V2;
+
+export const V1_MANAGED_MODELS = Object.freeze([
   "openai-codex/gpt-6-sol",
   "openai-codex/gpt-6.1-sol",
   "openai/gpt-6-sol",
   "openai/gpt-6.1-sol",
 ]);
 
-export const EXPECTED_MANAGED_VALUES = Object.freeze({
+export const V1_EXPECTED_VALUES = Object.freeze({
   reserveTokens: 65536,
   keepRecentTokens: 20000,
 });
-
-export const MANIFEST_FILENAME = ".pi-auto-compaction-manifest.json";
-export const STATE_DIRNAME = ".pi-auto-compaction-state";
-export const LOCK_FILENAME = ".pi-auto-compaction.lock";
-export const JOURNAL_FILENAME = "recovery-journal.json";
-export const EXPECTED_MANIFEST_VERSION = "1.0.0";
 
 export const RECEIPT_KIND = "pi-auto-compaction-setup-receipt";
 export const RECEIPT_VERSION = 1;
@@ -56,62 +72,46 @@ export function validateSettings(settings) {
   }
 }
 
+function validateBaselineRecord(record, field, m, label, entry) {
+  if (!isPlainObject(record) || typeof record.present !== "boolean") {
+    throw new Error(`Invalid or corrupt ${label}: corrupt ${field} schema for ${m}`);
+  }
+  const valuePresent = entry.present && Object.prototype.hasOwnProperty.call(entry.value, field);
+  if (record.present) {
+    if (!Number.isSafeInteger(record.value) || record.value < 0) {
+      throw new Error(`Invalid or corrupt ${label}: corrupt ${field} value for ${m}`);
+    }
+    if (!valuePresent || entry.value[field] !== record.value) {
+      throw new Error(`Invalid or corrupt ${label}: ${field} contradicts baseline value for ${m}`);
+    }
+  } else if (record.value !== undefined || valuePresent) {
+    throw new Error(`Invalid or corrupt ${label}: ${field} value present in absent baseline field for ${m}`);
+  }
+}
+
+function validateBaselineEntry(entry, m, label) {
+  if (!isPlainObject(entry) || typeof entry.present !== "boolean") {
+    throw new Error(`Invalid or corrupt ${label}: corrupt baseline for ${m}`);
+  }
+  if (entry.present ? !isPlainObject(entry.value) : entry.value !== null) {
+    throw new Error(`Invalid or corrupt ${label}: corrupt baseline value for ${m}`);
+  }
+  const originallyEmpty = entry.present && Object.keys(entry.value).length === 0;
+  if (typeof entry.originalEmpty !== "boolean" || entry.originalEmpty !== originallyEmpty) {
+    throw new Error(`Invalid or corrupt ${label}: corrupt originalEmpty state for ${m}`);
+  }
+  validateBaselineRecord(entry.reserveTokens, "reserveTokens", m, label, entry);
+  validateBaselineRecord(entry.keepRecentTokens, "keepRecentTokens", m, label, entry);
+}
+
 export function validateManifest(manifest, label = "manifest", expectedLoaderPath) {
   if (!isPlainObject(manifest)) {
     throw new Error(`Invalid or corrupt ${label}: must be a non-null object`);
   }
-  if (manifest.version !== EXPECTED_MANIFEST_VERSION) {
+  if (manifest.version !== MANIFEST_VERSION_V1 && manifest.version !== MANIFEST_VERSION_V2) {
     throw new Error(
-      `Invalid or corrupt ${label}: unsupported version ${manifest.version} (expected ${EXPECTED_MANIFEST_VERSION})`,
+      `Invalid or corrupt ${label}: unsupported version ${manifest.version} (expected ${MANIFEST_VERSION_V2})`,
     );
-  }
-  if (!Array.isArray(manifest.managedModels) || manifest.managedModels.length !== MANAGED_MODELS.length) {
-    throw new Error(`Invalid or corrupt ${label}: managedModels schema mismatch`);
-  }
-  for (const m of MANAGED_MODELS) {
-    if (!manifest.managedModels.includes(m)) {
-      throw new Error(`Invalid or corrupt ${label}: managedModels missing managed model ${m}`);
-    }
-  }
-  if (!isPlainObject(manifest.originalOverrides)) {
-    throw new Error(`Invalid or corrupt ${label}: originalOverrides must be a non-null object`);
-  }
-  if (Object.keys(manifest.originalOverrides).length !== MANAGED_MODELS.length) {
-    throw new Error(`Invalid or corrupt ${label}: originalOverrides must contain exactly four baselines`);
-  }
-  for (const m of MANAGED_MODELS) {
-    if (!Object.prototype.hasOwnProperty.call(manifest.originalOverrides, m)) {
-      throw new Error(`Invalid or corrupt ${label}: missing baseline for ${m}`);
-    }
-    const entry = manifest.originalOverrides[m];
-    if (!isPlainObject(entry) || typeof entry.present !== "boolean") {
-      throw new Error(`Invalid or corrupt ${label}: corrupt baseline for ${m}`);
-    }
-    if (entry.present ? !isPlainObject(entry.value) : entry.value !== null) {
-      throw new Error(`Invalid or corrupt ${label}: corrupt baseline value for ${m}`);
-    }
-    const originallyEmpty = entry.present && Object.keys(entry.value).length === 0;
-    if (typeof entry.originalEmpty !== "boolean" || entry.originalEmpty !== originallyEmpty) {
-      throw new Error(`Invalid or corrupt ${label}: corrupt originalEmpty state for ${m}`);
-    }
-
-    for (const field of Object.keys(EXPECTED_MANAGED_VALUES)) {
-      const record = entry[field];
-      if (!isPlainObject(record) || typeof record.present !== "boolean") {
-        throw new Error(`Invalid or corrupt ${label}: corrupt ${field} schema for ${m}`);
-      }
-      const valuePresent = entry.present && Object.prototype.hasOwnProperty.call(entry.value, field);
-      if (record.present) {
-        if (!Number.isSafeInteger(record.value) || record.value < 0) {
-          throw new Error(`Invalid or corrupt ${label}: corrupt ${field} value for ${m}`);
-        }
-        if (!valuePresent || entry.value[field] !== record.value) {
-          throw new Error(`Invalid or corrupt ${label}: ${field} contradicts baseline value for ${m}`);
-        }
-      } else if (record.value !== undefined || valuePresent) {
-        throw new Error(`Invalid or corrupt ${label}: ${field} value present in absent baseline field for ${m}`);
-      }
-    }
   }
 
   if (typeof manifest.loaderHash !== "string" || !/^[0-9a-f]{64}$/i.test(manifest.loaderHash)) {
@@ -130,12 +130,107 @@ export function validateManifest(manifest, label = "manifest", expectedLoaderPat
     throw new Error(`Invalid or corrupt ${label}: loaderPath ownership mismatch`);
   }
 
-  if (
-    !isPlainObject(manifest.expectedManagedValues) ||
-    manifest.expectedManagedValues.reserveTokens !== EXPECTED_MANAGED_VALUES.reserveTokens ||
-    manifest.expectedManagedValues.keepRecentTokens !== EXPECTED_MANAGED_VALUES.keepRecentTokens
-  ) {
-    throw new Error(`Invalid or corrupt ${label}: expectedManagedValues mismatch`);
+  if (manifest.version === MANIFEST_VERSION_V1) {
+    const expectedKeys = [
+      "expectedManagedValues",
+      "installedAt",
+      "loaderHash",
+      "loaderPath",
+      "managedModels",
+      "originalOverrides",
+      "packageSourceDir",
+      "version",
+    ];
+    if (Object.keys(manifest).sort().join(",") !== expectedKeys.sort().join(",")) {
+      throw new Error(`Invalid or corrupt ${label}: schema mismatch`);
+    }
+
+    if (!Array.isArray(manifest.managedModels) || manifest.managedModels.length !== V1_MANAGED_MODELS.length) {
+      throw new Error(`Invalid or corrupt ${label}: managedModels schema mismatch`);
+    }
+    for (const m of V1_MANAGED_MODELS) {
+      if (!manifest.managedModels.includes(m)) {
+        throw new Error(`Invalid or corrupt ${label}: managedModels missing managed model ${m}`);
+      }
+    }
+
+    if (!isPlainObject(manifest.originalOverrides)) {
+      throw new Error(`Invalid or corrupt ${label}: originalOverrides must be a non-null object`);
+    }
+    if (Object.keys(manifest.originalOverrides).length !== V1_MANAGED_MODELS.length) {
+      throw new Error(`Invalid or corrupt ${label}: originalOverrides must contain exactly four baselines`);
+    }
+    for (const m of V1_MANAGED_MODELS) {
+      if (!Object.prototype.hasOwnProperty.call(manifest.originalOverrides, m)) {
+        throw new Error(`Invalid or corrupt ${label}: missing baseline for ${m}`);
+      }
+      validateBaselineEntry(manifest.originalOverrides[m], m, label);
+    }
+
+    if (
+      !isPlainObject(manifest.expectedManagedValues) ||
+      manifest.expectedManagedValues.reserveTokens !== V1_EXPECTED_VALUES.reserveTokens ||
+      manifest.expectedManagedValues.keepRecentTokens !== V1_EXPECTED_VALUES.keepRecentTokens ||
+      Object.keys(manifest.expectedManagedValues).sort().join(",") !== "keepRecentTokens,reserveTokens"
+    ) {
+      throw new Error(`Invalid or corrupt ${label}: expectedManagedValues mismatch`);
+    }
+  } else {
+    // MANIFEST_VERSION_V2 ("2.0.0")
+    const expectedKeys = [
+      "installedAt",
+      "loaderHash",
+      "loaderPath",
+      "managedModels",
+      "originalOverrides",
+      "packageSourceDir",
+      "policies",
+      "version",
+    ];
+    if (Object.keys(manifest).sort().join(",") !== expectedKeys.sort().join(",")) {
+      throw new Error(`Invalid or corrupt ${label}: schema mismatch`);
+    }
+
+    if (!Array.isArray(manifest.managedModels) || manifest.managedModels.length !== MANAGED_MODELS.length) {
+      throw new Error(`Invalid or corrupt ${label}: managedModels schema mismatch`);
+    }
+    for (const m of MANAGED_MODELS) {
+      if (!manifest.managedModels.includes(m)) {
+        throw new Error(`Invalid or corrupt ${label}: managedModels missing managed model ${m}`);
+      }
+    }
+
+    if (!isPlainObject(manifest.policies) || Object.keys(manifest.policies).length !== MANAGED_MODELS.length) {
+      throw new Error(`Invalid or corrupt ${label}: policies schema mismatch`);
+    }
+    for (const m of MANAGED_MODELS) {
+      if (!Object.prototype.hasOwnProperty.call(manifest.policies, m)) {
+        throw new Error(`Invalid or corrupt ${label}: policies missing policy for ${m}`);
+      }
+      const pol = manifest.policies[m];
+      const exp = MANAGED_POLICIES[m];
+      if (
+        !isPlainObject(pol) ||
+        pol.reserveTokens !== exp.reserveTokens ||
+        pol.keepRecentTokens !== exp.keepRecentTokens ||
+        Object.keys(pol).sort().join(",") !== "keepRecentTokens,reserveTokens"
+      ) {
+        throw new Error(`Invalid or corrupt ${label}: policy mismatch for ${m}`);
+      }
+    }
+
+    if (!isPlainObject(manifest.originalOverrides)) {
+      throw new Error(`Invalid or corrupt ${label}: originalOverrides must be a non-null object`);
+    }
+    if (Object.keys(manifest.originalOverrides).length !== MANAGED_MODELS.length) {
+      throw new Error(`Invalid or corrupt ${label}: originalOverrides must contain exactly eight baselines`);
+    }
+    for (const m of MANAGED_MODELS) {
+      if (!Object.prototype.hasOwnProperty.call(manifest.originalOverrides, m)) {
+        throw new Error(`Invalid or corrupt ${label}: missing baseline for ${m}`);
+      }
+      validateBaselineEntry(manifest.originalOverrides[m], m, label);
+    }
   }
 }
 
@@ -234,6 +329,71 @@ export function verifySnapshot(snapshot) {
   }
 }
 
+export function captureModelBaseline(currentOverrides, modelId) {
+  const isPresent = Boolean(
+    currentOverrides && isPlainObject(currentOverrides) && Object.prototype.hasOwnProperty.call(currentOverrides, modelId),
+  );
+  const modelObj = isPresent && isPlainObject(currentOverrides[modelId]) ? currentOverrides[modelId] : null;
+  return {
+    present: isPresent,
+    reserveTokens: {
+      present: Boolean(modelObj && Object.prototype.hasOwnProperty.call(modelObj, "reserveTokens")),
+      value: modelObj?.reserveTokens,
+    },
+    keepRecentTokens: {
+      present: Boolean(modelObj && Object.prototype.hasOwnProperty.call(modelObj, "keepRecentTokens")),
+      value: modelObj?.keepRecentTokens,
+    },
+    originalEmpty: isPresent && isPlainObject(modelObj) && Object.keys(modelObj).length === 0,
+    value: isPresent && modelObj ? { ...modelObj } : null,
+  };
+}
+
+export function migrateManifestV1ToV2(manifest, currentSettings = {}) {
+  if (!isPlainObject(manifest)) {
+    throw new Error("Invalid manifest for migration: must be a non-null object");
+  }
+  if (manifest.version === MANIFEST_VERSION_V2) {
+    validateManifest(manifest, "manifest");
+    return structuredClone(manifest);
+  }
+  validateManifest(manifest, "manifest");
+
+  const currentOverrides = currentSettings?.compaction?.modelOverrides || {};
+  const originalOverrides = {};
+
+  // Preserve v1 originalOverrides byte-for-byte for the four OpenAI models
+  for (const m of V1_MANAGED_MODELS) {
+    originalOverrides[m] = structuredClone(manifest.originalOverrides[m]);
+  }
+
+  // Capture baseline for new models from currentSettings at migration time
+  for (const m of MANAGED_MODELS) {
+    if (!V1_MANAGED_MODELS.includes(m)) {
+      originalOverrides[m] = captureModelBaseline(currentOverrides, m);
+    }
+  }
+
+  const policies = {};
+  for (const [model, pol] of Object.entries(MANAGED_POLICIES)) {
+    policies[model] = { reserveTokens: pol.reserveTokens, keepRecentTokens: pol.keepRecentTokens };
+  }
+
+  const migrated = {
+    version: MANIFEST_VERSION_V2,
+    installedAt: manifest.installedAt,
+    packageSourceDir: manifest.packageSourceDir,
+    managedModels: [...MANAGED_MODELS],
+    policies,
+    originalOverrides,
+    loaderPath: manifest.loaderPath,
+    loaderHash: manifest.loaderHash,
+  };
+
+  validateManifest(migrated, "migrated manifest");
+  return migrated;
+}
+
 export function checkDriftOnReinstall(currentSettings, manifest, loaderPath) {
   // 1. Loader drift
   if (fs.existsSync(loaderPath)) {
@@ -252,7 +412,10 @@ export function checkDriftOnReinstall(currentSettings, manifest, loaderPath) {
     throw new Error("Conflict: compaction.modelOverrides was removed or modified externally (drift detected).");
   }
 
-  for (const modelId of MANAGED_MODELS) {
+  const isV1 = manifest.version === MANIFEST_VERSION_V1;
+  const models = isV1 ? (manifest.managedModels || V1_MANAGED_MODELS) : (manifest.managedModels || MANAGED_MODELS);
+
+  for (const modelId of models) {
     if (!Object.prototype.hasOwnProperty.call(overrides, modelId)) {
       throw new Error(`Conflict: Managed model ${modelId} was removed externally (drift detected).`);
     }
@@ -260,12 +423,15 @@ export function checkDriftOnReinstall(currentSettings, manifest, loaderPath) {
     if (!isPlainObject(currentModel)) {
       throw new Error(`Conflict: Managed model ${modelId} override is invalid (drift detected).`);
     }
-    if (currentModel.reserveTokens !== EXPECTED_MANAGED_VALUES.reserveTokens) {
+    const expected = isV1
+      ? (manifest.expectedManagedValues || V1_EXPECTED_VALUES)
+      : (manifest.policies?.[modelId] || MANAGED_POLICIES[modelId]);
+    if (currentModel.reserveTokens !== expected.reserveTokens) {
       throw new Error(
         `Conflict: Managed model ${modelId} reserveTokens was modified externally to ${currentModel.reserveTokens} (drift detected).`,
       );
     }
-    if (currentModel.keepRecentTokens !== EXPECTED_MANAGED_VALUES.keepRecentTokens) {
+    if (currentModel.keepRecentTokens !== expected.keepRecentTokens) {
       throw new Error(
         `Conflict: Managed model ${modelId} keepRecentTokens was modified externally to ${currentModel.keepRecentTokens} (drift detected).`,
       );
@@ -296,7 +462,10 @@ export function checkDriftOnRollback(currentSettings, manifest, loaderPath) {
     );
   }
 
-  for (const modelId of MANAGED_MODELS) {
+  const isV1 = manifest.version === MANIFEST_VERSION_V1;
+  const models = isV1 ? (manifest.managedModels || V1_MANAGED_MODELS) : (manifest.managedModels || MANAGED_MODELS);
+
+  for (const modelId of models) {
     if (!Object.prototype.hasOwnProperty.call(overrides, modelId)) {
       throw new Error(`Conflict: Managed model ${modelId} was removed externally (drift detected). Rollback refused.`);
     }
@@ -304,12 +473,15 @@ export function checkDriftOnRollback(currentSettings, manifest, loaderPath) {
     if (!isPlainObject(currentModel)) {
       throw new Error(`Conflict: Managed model ${modelId} override is invalid (drift detected). Rollback refused.`);
     }
-    if (currentModel.reserveTokens !== EXPECTED_MANAGED_VALUES.reserveTokens) {
+    const expected = isV1
+      ? (manifest.expectedManagedValues || V1_EXPECTED_VALUES)
+      : (manifest.policies?.[modelId] || MANAGED_POLICIES[modelId]);
+    if (currentModel.reserveTokens !== expected.reserveTokens) {
       throw new Error(
         `Conflict: Managed model ${modelId} reserveTokens was modified externally to ${currentModel.reserveTokens} (drift detected). Rollback refused.`,
       );
     }
-    if (currentModel.keepRecentTokens !== EXPECTED_MANAGED_VALUES.keepRecentTokens) {
+    if (currentModel.keepRecentTokens !== expected.keepRecentTokens) {
       throw new Error(
         `Conflict: Managed model ${modelId} keepRecentTokens was modified externally to ${currentModel.keepRecentTokens} (drift detected). Rollback refused.`,
       );
@@ -340,11 +512,12 @@ export function applyManagedSettings(existingSettings = {}) {
   const currentCompaction = existingSettings.compaction || {};
   const currentOverrides = currentCompaction.modelOverrides || {};
   const updatedOverrides = { ...currentOverrides };
-  for (const modelId of MANAGED_MODELS) {
+  for (const [modelId, policy] of Object.entries(MANAGED_POLICIES)) {
     const existingModelObj = updatedOverrides[modelId] || {};
     updatedOverrides[modelId] = {
       ...existingModelObj,
-      ...EXPECTED_MANAGED_VALUES,
+      reserveTokens: policy.reserveTokens,
+      keepRecentTokens: policy.keepRecentTokens,
     };
   }
   return {
@@ -363,12 +536,16 @@ export function buildManifest({
   loaderPath,
   loaderHash,
 }) {
+  const policies = {};
+  for (const [model, pol] of Object.entries(MANAGED_POLICIES)) {
+    policies[model] = Object.freeze({ reserveTokens: pol.reserveTokens, keepRecentTokens: pol.keepRecentTokens });
+  }
   return {
     version: EXPECTED_MANIFEST_VERSION,
     installedAt,
     packageSourceDir,
     managedModels: [...MANAGED_MODELS],
-    expectedManagedValues: { ...EXPECTED_MANAGED_VALUES },
+    policies: Object.freeze(policies),
     originalOverrides,
     loaderPath,
     loaderHash,

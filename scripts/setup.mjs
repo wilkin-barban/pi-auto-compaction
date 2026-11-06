@@ -3,15 +3,19 @@ import path from "node:path";
 import os from "node:os";
 import {
   MANAGED_MODELS,
-  EXPECTED_MANAGED_VALUES,
+  MANAGED_POLICIES,
   MANIFEST_FILENAME,
   LOCK_FILENAME,
   JOURNAL_FILENAME,
+  MANIFEST_VERSION_V1,
+  MANIFEST_VERSION_V2,
   EXPECTED_MANIFEST_VERSION,
   isPlainObject,
   hashContent,
   validateSettings,
   validateManifest,
+  migrateManifestV1ToV2,
+  captureModelBaseline,
   ensureStateDir,
   acquireLock,
   releaseLock,
@@ -28,7 +32,7 @@ import {
 
 export {
   MANAGED_MODELS as TARGET_MODELS,
-  EXPECTED_MANAGED_VALUES as MANAGED_OVERRIDE,
+  MANAGED_POLICIES as MANAGED_OVERRIDE,
   MANIFEST_FILENAME,
   LOCK_FILENAME,
   EXPECTED_MANIFEST_VERSION as MANIFEST_VERSION,
@@ -123,29 +127,17 @@ export function runSetup(options = {}) {
     const currentOverrides = currentCompaction.modelOverrides || {};
 
     // 5. Establish original baseline: NEVER recapture baseline on reinstall!
+    // Migrate v1 manifest to v2 BEFORE applying settings so new baselines describe pre-policy state.
     let originalOverrides;
     if (manifest) {
+      if (manifest.version === MANIFEST_VERSION_V1) {
+        manifest = migrateManifestV1ToV2(manifest, existingSettings);
+      }
       originalOverrides = manifest.originalOverrides;
     } else {
       originalOverrides = {};
       for (const modelId of MANAGED_MODELS) {
-        const isPresent = Boolean(
-          currentOverrides && Object.prototype.hasOwnProperty.call(currentOverrides, modelId),
-        );
-        const modelObj = isPresent && currentOverrides[modelId] ? currentOverrides[modelId] : null;
-        originalOverrides[modelId] = {
-          present: isPresent,
-          reserveTokens: {
-            present: Boolean(modelObj && Object.prototype.hasOwnProperty.call(modelObj, "reserveTokens")),
-            value: modelObj?.reserveTokens,
-          },
-          keepRecentTokens: {
-            present: Boolean(modelObj && Object.prototype.hasOwnProperty.call(modelObj, "keepRecentTokens")),
-            value: modelObj?.keepRecentTokens,
-          },
-          originalEmpty: isPresent && isPlainObject(modelObj) && Object.keys(modelObj).length === 0,
-          value: isPresent && modelObj ? { ...modelObj } : null,
-        };
+        originalOverrides[modelId] = captureModelBaseline(currentOverrides, modelId);
       }
     }
 

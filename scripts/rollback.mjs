@@ -19,6 +19,8 @@ import {
   checkDriftOnRollback,
 } from "../src/install-state.mjs";
 
+export { MANAGED_MODELS as TARGET_MODELS };
+
 export function runRollback(options = {}) {
   const agentDir =
     options.agentDir ||
@@ -106,7 +108,8 @@ export function runRollback(options = {}) {
       const overrides = { ...currentSettings.compaction.modelOverrides };
       const originalOverrides = manifest.originalOverrides || {};
 
-      for (const modelId of MANAGED_MODELS) {
+      const managedList = manifest.managedModels || MANAGED_MODELS;
+      for (const modelId of managedList) {
         const baseline = originalOverrides[modelId];
         const currentModel = overrides[modelId];
 

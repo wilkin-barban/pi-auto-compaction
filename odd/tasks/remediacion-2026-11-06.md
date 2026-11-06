@@ -39,6 +39,11 @@ Repo `pi-auto-compaction`, rama `main`. Ordenar `--adopt-agent` sin commitear, i
 
 - E0 (R0): baseline `npm test` → `# tests 196`, `# suites 10`, `# pass 196`, `# fail 0`, 39.290 ms. Sin cambios de comportamiento; no aplica RED.
 - E0b (R0, test partido): `node --test test/integration/deploy.test.mjs` sobre el corte parcial (19 tests) → 19/19 pass, 17.727 ms. Los tests restantes se agregan en las unidades siguientes.
+- E1 (R2, telemetría): tests nuevos `test/unit/telemetry.test.mjs` (contexto de conversación) y `test/integration/extension-lifecycle.test.mjs` (registro de `conversationModel/Provider/contextWindow/reserveTokens/keepRecentTokens/thresholdTokens`). RED observado: el registro previo no contenía esos campos; GREEN: suites verdes con el contexto resuelto desde settings/manifest/registry.
+- E2 (R3, políticas por modelo): RED `node --test test/integration/install-state.test.mjs` → `SyntaxError: ... does not provide an export named 'MANAGED_POLICIES'`; GREEN 8/8 tras `MANAGED_POLICIES` (8 modelos), `MANAGED_MODELS` derivado y manifiesto v2 con `migrateManifestV1ToV2`.
+- E3 (R3, suite completa): `npm test` → `# tests 218`, `# suites 11`, `# pass 218`, `# fail 0`, 46.5 s. Incluye 8 tests nuevos de `test/integration/install-state.test.mjs`.
+- E4 (R5, compat): `PI_COMPAT_VERSION=0.87.1 node scripts/compat/pi-1.5.0-smoke.mjs` → 5/5 checks (versión, defaults 16384/20000, exports, serialización, ciclo de hooks). Job CI `compat-pi-1.5` instala 1.5.0 y corre el smoke.
+- E5 (R2/R5, opt-out): RED al desactivar el guard de `skipProviders` (test de lifecycle falla, resumidor invocado en DeepSeek); GREEN al restaurarlo con `node --test test/unit/config.test.mjs test/integration/extension-lifecycle.test.mjs`.
 
 ## Log
 
@@ -46,3 +51,4 @@ Repo `pi-auto-compaction`, rama `main`. Ordenar `--adopt-agent` sin commitear, i
 - L2: hallazgo raíz: `~/.pi/agent/settings.json` tiene `commandcode/deepseek/deepseek-v4.1-flash: reserveTokens 860000, keepRecentTokens 20000`; Pi 1.5.0 calcula `shouldCompact = tokens > contextWindow - reserveTokens`; catálogo local declara 1.000.000 → dispara a 140.000 = 14%. Telemetría: sesión `01a17fe6-...` (Trindade) 106 compactaciones, 105 a ~140k, 1.997,6 s, ~6,95M tokens de entrada al resumidor. Gemini: 1.048.576 − 848.576 = 200.000. Es un override externo fuera de los cuatro modelos gestionados.
 - L3: baseline `npm test` = 196/196 en 10 suites, Node 22.23.2; SDK local 0.87.1; Pi real 1.5.0.
 - L4: trabajar en incrementos pequeños y mantener este documento actualizado porque la sesión corre DeepSeek al 14%.
+- L5 (estado real al 2026-11-06, antes de commitear R2/R3): working tree con R2 (telemetría: `src/telemetry.mjs`, `src/extension.mjs`, `docs/arquitectura.md`, tests unit/integration), R3 (políticas: `src/install-state.mjs`, `scripts/setup.mjs`, `scripts/rollback.mjs`, `scripts/deploy.mjs`, tests de install-state/scripts/deploy) y R5 parcial (`src/config.mjs`, `scripts/compat/pi-1.5.0-smoke.mjs`, `.github/workflows/ci.yml`). Suite completa verde 218/218 antes de commitear. Commits pendientes de esta tanda (en orden): R3 code+tests de scripts, R3 test install-state, R2 config, R2 código+docs, R2 tests unit, R2 test lifecycle, R5 CI+smoke, y actualización final de este documento con hashes.
