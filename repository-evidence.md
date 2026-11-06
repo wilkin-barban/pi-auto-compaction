@@ -473,3 +473,19 @@ Las tres guías de documentación (`docs/instalacion.md`, `docs/mantenimiento.md
 | Doctor sobre el agente real | `node scripts/doctor.mjs --agent-dir "$HOME/.pi/agent"` | reporta política efectiva por modelo, origen de cada valor y estado de loader/manifiesto/marker/release |
 
 Commits de la tanda: `aabfce3` políticas+manifiesto v2, `4071c13` tests de migración, `3d213d8` `skipProviders`, `5fa910f` contexto de conversación, `b4e13df` y `101ba26` tests, `c1885a6` smoke CI, `c2cd711` doctor, `00d5967` dry-run y limpieza.
+
+## Verificación del release 1.2.0 — configuración gráfica del resumidor (2026-11-06)
+
+| Comprobación | Comando | Resultado |
+|---|---|---|
+| Store del resumidor | `node --test test/unit/summarizer-settings.test.mjs` | 39/39: archivo ausente/válido/corrupto, esquema estricto, escritura atómica sin residuos, `0600`/`0700`, symlink rechazado, `settings.json` intacto, precedencia completa, env incompleto, defaults inmutables |
+| Aplicación en caliente | `node --test test/unit/runtime-config.test.mjs` | 8/8: precedencia `options > env > file > default`, swap tras guardar, config previa conservada ante validación o escritura fallida, `reload()` sin reinicio |
+| Comando TUI | `node --test test/unit/compaction-command.test.mjs` | 15/15: registro y descripción exacta, labels `provider/id · nombre · ctx 1.048.576 · max 65.536`, orden `provider/id`, fallback con `hasConfiguredAuth`, guardado + status, cancelaciones, mismo modelo, contexto chico, sin modelos, no-TUI, fallo de escritura |
+| Hook usa el modelo nuevo (A4) | `node --test test/integration/extension-lifecycle.test.mjs` | 10/10, incluido el ciclo que lee el archivo de settings y llama al resumidor con el modelo elegido sin `/reload` |
+| Doctor | `node --test test/unit/doctor.test.mjs` | 20/20: defaults sin archivo, modelos con origen `file` y datos de catálogo, archivo corrupto con advertencia y exit 1, modelo ausente de catálogos, contexto chico, origen `env`, árbol intacto |
+| Suite completa | `npm test` | `# tests 302`, `# suites 25`, `# pass 302`, `# fail 0` |
+| Compatibilidad Pi | `PI_COMPAT_VERSION=0.87.1 node scripts/compat/pi-1.5.0-smoke.mjs` | 5/5 checks; CI lo repite contra 1.5.0 |
+
+Límite de la integración gráfica: Pi 1.5.0 y gentle-pi 4.6.0 no exponen `registerSettings` ni un hook para agregar filas a la página Extensions o a `/gentle:customize`. La integración soportada es el comando `/compaction` más el estado `pi-auto-compaction-model` en el footer; no se parchearon productos instalados.
+
+Disciplina TDD: T1 y T2 observaron RED antes de GREEN. T3 observó RED por un fixture propio (`settings.json` rechazado por el guard) y se corrigió el fixture, no el guard. T4 y A4 se escribieron después del código y se reportan como GREEN sin RED observado.

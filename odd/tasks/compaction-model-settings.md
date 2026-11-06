@@ -40,12 +40,12 @@ Validación estricta (`version === 1`, `provider`/`modelId` strings no vacíos, 
 
 ## Tareas
 
-- T1 — S1 store + tests. Writer/worker. Commit propio. **Hecho**: `src/summarizer-settings.mjs` + 39 tests; `DEFAULT_EFFECTIVE_SUMMARIZER` replica los modelos de `DEFAULT_CONFIG`; `resolveSummarizerSettings` expone `primaryModel`/`fallbackModel` congelados y `sources` por slot.
-- T2 — S2 integración en `config.mjs`/`extension.mjs` + tests de precedencia y caliente. Inline. Commit propio. **Hecho**: `src/config.mjs` (`resolveActiveConfig`), `src/runtime-config.mjs`, `src/extension.mjs` con snapshot por ciclo.
-- T3 — S3 comando `/compaction` + TUI + status + tests. Inline. Commit propio. **Hecho**: `src/compaction-command.mjs`, registro y `session_start` en `src/extension.mjs`.
-- T4 — S4 sección de resumidor en `doctor` + tests. Writer. Commit propio.
-- T5 — S5 docs, CHANGELOG 1.2.0, bump y evidencia. Inline. Commit propio.
-- T6 — S6 suite, smoke, push, CI y deploy live. Inline. Cierre.
+- T1 — S1 store + tests. Writer/worker. Commit propio. **Hecho**: `3758223`; `src/summarizer-settings.mjs` + 39 tests; `DEFAULT_EFFECTIVE_SUMMARIZER` replica los modelos de `DEFAULT_CONFIG`; `resolveSummarizerSettings` expone `primaryModel`/`fallbackModel` congelados y `sources` por slot.
+- T2 — S2 integración en `config.mjs`/`extension.mjs` + tests de precedencia y caliente. Inline. Commit propio. **Hecho**: `cf14ced`; `src/config.mjs` (`resolveActiveConfig`), `src/runtime-config.mjs`, `src/extension.mjs` con snapshot por ciclo.
+- T3 — S3 comando `/compaction` + TUI + status + tests. Inline. Commit propio. **Hecho**: `52f8e24`; `src/compaction-command.mjs`, registro y `session_start` en `src/extension.mjs`.
+- T4 — S4 sección de resumidor en `doctor` + tests. Writer. Commit propio. **Hecho**: `a6b93a9`; writer cancelado por tiempo sin escribir, implementado inline.
+- T5 — S5 docs, CHANGELOG 1.2.0, bump y evidencia. Inline. Commit propio. **Hecho**: `844f184` docs, `d434e1f` corrección de troubleshooting, CHANGELOG/bump/evidencia en el commit de cierre.
+- T6 — S6 suite, smoke, push, CI y deploy live. Inline. Cierre. **En curso**.
 
 ## Criterios de aceptación
 
@@ -63,8 +63,15 @@ Validación estricta (`version === 1`, `provider`/`modelId` strings no vacíos, 
 - **T1 (store)**: RED `node --test test/unit/summarizer-settings.test.mjs` → `ERR_MODULE_NOT_FOUND` del módulo; GREEN 39/39 en ese archivo. Suite completa: **271/271 en 20 suites** (baseline 232 + 39). Cubre archivo ausente/válido/corrupto, versión y claves inválidas, escritura atómica sin residuos, modos 0600/0700, rechazo de symlink, `settings.json` intacto, cadena de precedencia completa, par de env incompleto y defaults inmutables.
 - **T2 (en caliente)**: RED `node --test test/unit/runtime-config.test.mjs` → 2 fallos por el guard de `settings.json` en el fixture (el fixture se corrigió, no el guard). GREEN 8/8 en ese archivo; suite completa **279/279 en 22 suites**. `resolveConfig` sigue puro (sin I/O); `resolveActiveConfig` es el único resolutor que lee el archivo y expone `summarizer.path/source/sources/warnings`; `createRuntimeConfig` sólo cambia la config viva después de una escritura exitosa.
 - **T3 (comando/TUI)**: RED/GREEN en `test/unit/compaction-command.test.mjs` (15/15): registro con la descripción exacta, labels `provider/id · nombre · ctx 1.048.576 · max 65.536`, orden `provider/id`, fallback de catálogo con `hasConfiguredAuth`, guardado + status `pi-auto-compaction-model`, cancelación en primario y en confirmación, mismo modelo rechazado, contexto chico avisado, sin modelos, no-TUI y fallo de escritura. Suite completa **294/294 en 24 suites**. Status publicado además en `session_start`.
-- Pendiente: T4–T6.
+- **A4 (end-to-end)**: `test/integration/extension-lifecycle.test.mjs` 10/10; el ciclo lee el archivo de settings, publica `Compaction: chosen/chosen-model` en `session_start` y llama al resumidor con el modelo elegido sin `/reload`. Escrito después del código: GREEN sin RED observado.
+- **T4 (doctor)**: `test/unit/doctor.test.mjs` 20/20 con sección `summarizer` (ruta, existencia, validez, origen, catálogo, `contextWindow`/`maxTokens`, warnings por corrupción/ausente/contexto chico, `--json` lo incluye y el árbol queda intacto). Escrito después del código: GREEN sin RED observado; el bloque se insertó primero en el ámbito equivocado y se reportó con error de inicialización hasta reubicarlo.
+- **T5 (docs/release)**: README, `docs/instalacion.md`, `docs/mantenimiento.md`, `docs/arquitectura.md`, `docs/solucion-de-problemas.md`, CHANGELOG 1.2.0, bump de `package.json`, `repository-evidence.md`. Se corrigieron dos afirmaciones no verificadas (advertencia "en consola" y aviso de modelo ausente durante la compactación).
+- Suite completa final: **302/302 en 25 suites**.
+- Límite conocido: no hay API de settings por extensión en Pi 1.5.0 ni hook en `/gentle:customize`; la integración es `/compaction` + status. No se parcheó ningún producto instalado.
 
 ## Log
 
 - L1 (usuario): «Quiero que construyas una configuración gráfica en la consola para elegir el modelo que hace la autocompactación… No quiero parchear Pi, gentle-shell, herdr ni `node_modules`.» Specs S1–S6 y criterios A1–A8 transcriptos arriba con los valores exactos (rutas, esquema JSON, variables de entorno, descripción del comando y claves de status). Estado inicial: `HEAD == origin/main == 712ac54`, `npm test` 232/232 en 12 suites, CI verde en Node 22, Node 24 y Pi 1.5.0 smoke, sesión al 13% de contexto con la política nueva aún no recargada.
+
+- Commits: `380fc3d` ODD, `3758223` T1, `cf14ced` T2, `52f8e24` T3, `844f184` T5a, `b47aaa1` A4, `a6b93a9` T4, `d434e1f` corrección docs. Base: `712ac54`.
+- Writers `mw52dbuu-6-f5od` (A4) y `mw52dh09-7-fzmf` (T4) se cancelaron sin escribir tras ~17,5 min; A4 y T4 se cerraron inline sin borrar trabajo.

@@ -8,6 +8,23 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 
 ---
 
+## [1.2.0] - 2026-11-06
+
+### Agregado
+
+- Comando `/compaction`: selector TUI que lista los modelos de chat disponibles en el harness (`ctx.modelRegistry`) con `provider/id`, nombre, `contextWindow` y `maxTokens`, permite elegir primario y respaldo, avisa si el contexto es chico y rechaza un respaldo idéntico al primario. No cambia el modelo de conversación.
+- Archivo propio del resumidor `$PI_CODING_AGENT_DIR/.pi-auto-compaction-settings.json` (o `$HOME/.pi/agent/...`), separado de `settings.json`, con escritura atómica, permisos `0600`/`0700`, rechazo de symlinks y esquema validado (`version: 1`).
+- Precedencia de configuración `options > env > archivo > defaults`, con variables `PI_AUTO_COMPACTION_PRIMARY_PROVIDER`, `PI_AUTO_COMPACTION_PRIMARY_MODEL`, `PI_AUTO_COMPACTION_FALLBACK_PROVIDER`, `PI_AUTO_COMPACTION_FALLBACK_MODEL` y override de ruta `PI_AUTO_COMPACTION_SETTINGS_PATH`.
+- Indicador de estado `pi-auto-compaction-model` en el footer, publicado en `session_start` y actualizado al guardar.
+- Sección de resumidor en `doctor`: ruta y validez del archivo, modelos efectivos con su origen, búsqueda en catálogos y advertencias por archivo corrupto, modelo ausente o contexto chico.
+
+### Cambiado
+
+- La configuración del resumidor se aplica en caliente: la próxima compactación usa los modelos nuevos sin `/reload`.
+- Un archivo de settings corrupto o inválido no rompe la extensión: se usan los defaults seguros y se conserva el archivo para diagnóstico.
+
+---
+
 ## [1.1.0] - 2026-11-06
 
 ### Agregado
