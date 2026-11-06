@@ -1,4 +1,7 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { resolveConfig } from "./config.mjs";
 import { TelemetryLogger } from "./telemetry.mjs";
 import { UiManager } from "./ui-manager.mjs";
@@ -11,6 +14,125 @@ import {
 } from "./context-builder.mjs";
 import { summarizeWithOmniRoute } from "./summarizer.mjs";
 import { convertToLlm, serializeConversation } from "./pi-sdk.mjs";
+
+const PI_DEFAULT_RESERVE_TOKENS = 16384;
+const PI_DEFAULT_KEEP_RECENT_TOKENS = 20000;
+
+function readAgentSettings(options = {}) {
+  if (options.settings !== undefined) {
+    if (typeof options.settings !== "object" || options.settings === null || Array.isArray(options.settings)) {
+      return null;
+    }
+    return options.settings;
+  }
+
+  const agentDir =
+    options.agentDir ||
+    process.env.PI_CODING_AGENT_DIR ||
+    path.join(os.homedir(), ".pi", "agent");
+  const settingsPath = options.settingsPath || path.join(agentDir, "settings.json");
+
+  try {
+    if (!fs.existsSync(settingsPath)) {
+      return {};
+    }
+    const content = fs.readFileSync(settingsPath, "utf-8");
+    const parsed = JSON.parse(content);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function resolveTokenSetting(overrideVal, globalVal, defaultVal) {
+  if (typeof overrideVal === "number" && Number.isInteger(overrideVal) && overrideVal >= 0) {
+    return overrideVal;
+  }
+  if (typeof globalVal === "number" && Number.isInteger(globalVal) && globalVal >= 0) {
+    return globalVal;
+  }
+  if (overrideVal === undefined && globalVal === undefined) {
+    return defaultVal;
+  }
+  return undefined;
+}
+
+function isConversationProviderSkipped(skipProviders, model) {
+  if (!Array.isArray(skipProviders) || skipProviders.length === 0) return false;
+  if (!model || typeof model !== "object") return false;
+
+  const candidates = new Set();
+  if (typeof model.provider === "string" && model.provider.length > 0) {
+    candidates.add(model.provider);
+  }
+  if (typeof model.id === "string" && model.id.length > 0) {
+    candidates.add(model.id);
+    const separator = model.id.indexOf("/");
+    if (separator > 0) candidates.add(model.id.slice(0, separator));
+  }
+
+  return [...candidates].some((candidate) => skipProviders.includes(candidate));
+}
+
+export function resolveConversationContext(ctx, options = {}) {
+  try {
+    if (!ctx || typeof ctx !== "object" || !ctx.model || typeof ctx.model !== "object") {
+      return {};
+    }
+
+    const { model } = ctx;
+    const result = {};
+
+    if (typeof model.provider === "string" && model.provider.length > 0) {
+      result.conversationProvider = model.provider;
+    }
+
+    if (typeof model.id === "string" && model.id.length > 0) {
+      result.conversationModel = model.id;
+    }
+
+    if (typeof model.contextWindow === "number" && Number.isInteger(model.contextWindow) && model.contextWindow > 0) {
+      result.contextWindow = model.contextWindow;
+    }
+
+    const settings = readAgentSettings(options);
+    if (settings !== null) {
+      const modelKey = `${model.provider}/${model.id}`;
+      const modelOverride = settings.compaction?.modelOverrides?.[modelKey];
+
+      const reserveTokens = resolveTokenSetting(
+        modelOverride?.reserveTokens,
+        settings.compaction?.reserveTokens,
+        PI_DEFAULT_RESERVE_TOKENS,
+      );
+
+      const keepRecentTokens = resolveTokenSetting(
+        modelOverride?.keepRecentTokens,
+        settings.compaction?.keepRecentTokens,
+        PI_DEFAULT_KEEP_RECENT_TOKENS,
+      );
+
+      if (reserveTokens !== undefined) {
+        result.reserveTokens = reserveTokens;
+      }
+
+      if (keepRecentTokens !== undefined) {
+        result.keepRecentTokens = keepRecentTokens;
+      }
+
+      if (result.contextWindow !== undefined && result.reserveTokens !== undefined) {
+        result.thresholdTokens = result.contextWindow - result.reserveTokens;
+      }
+    }
+
+    return result;
+  } catch {
+    return {};
+  }
+}
 
 export function autoCompactionExtension(pi, options = {}) {
   const config = resolveConfig(options);
@@ -28,6 +150,13 @@ export function autoCompactionExtension(pi, options = {}) {
       return { cancel: true };
     }
 
+    // A skipped conversation provider must never be summarized through
+    // OmniRoute. Returning undefined lets Pi run its native compaction, where
+    // the conversation model summarizes its own session.
+    if (isConversationProviderSkipped(config.skipProviders, ctx?.model)) {
+      return undefined;
+    }
+
     const {
       firstKeptEntryId,
       tokensBefore,
@@ -40,6 +169,7 @@ export function autoCompactionExtension(pi, options = {}) {
     const sessionId = ctx.sessionManager?.getSessionId?.() || "sess-inmemory";
     const cycleId = `cycle-${sessionId}-${Date.now()}-${tokensBefore}-${crypto.randomUUID().slice(0, 8)}`;
     const startTime = Date.now();
+    const conversationContext = resolveConversationContext(ctx, options);
 
     activeUi = new UiManager(pi, ctx);
     activeCycle = {
@@ -50,6 +180,7 @@ export function autoCompactionExtension(pi, options = {}) {
       model: `${config.primaryModel.provider}/${config.primaryModel.modelId}`,
       sessionId,
       attemptedOmniRoute: true,
+      conversationContext,
     };
 
     activeUi.startCompaction(reason, config.primaryModel.modelId);
@@ -151,6 +282,7 @@ export function autoCompactionExtension(pi, options = {}) {
     const tokensBefore = event.compactionEntry?.tokensBefore || activeCycle?.tokensBefore || 0;
 
     activeUi?.completeCompaction(model, durationMs, tokensBefore);
+    const conversationContext = activeCycle?.conversationContext || resolveConversationContext(ctx, options);
     telemetry.recordTerminalSuccess({
       cycleId: activeCycle?.cycleId,
       sessionId: ctx.sessionManager?.getSessionId?.() || activeCycle?.sessionId || "unknown",
@@ -160,6 +292,12 @@ export function autoCompactionExtension(pi, options = {}) {
       tokensBefore,
       usage: event.fromExtension ? activeCycle?.usage : undefined,
       attemptCount: activeCycle?.attempts !== undefined ? activeCycle.attempts : (event.fromExtension ? 1 : 2),
+      conversationModel: conversationContext.conversationModel,
+      conversationProvider: conversationContext.conversationProvider,
+      contextWindow: conversationContext.contextWindow,
+      reserveTokens: conversationContext.reserveTokens,
+      keepRecentTokens: conversationContext.keepRecentTokens,
+      thresholdTokens: conversationContext.thresholdTokens,
     });
 
     activeUi = null;
@@ -173,6 +311,7 @@ export function autoCompactionExtension(pi, options = {}) {
     const category = event.aborted ? "abort" : classifyError(event.errorMessage);
 
     activeUi?.failCompaction(category, event.willRetry);
+    const conversationContext = activeCycle?.conversationContext || resolveConversationContext(ctx, options);
     telemetry.recordTerminalFailure({
       cycleId: activeCycle?.cycleId,
       sessionId: ctx.sessionManager?.getSessionId?.() || activeCycle?.sessionId || "unknown",
@@ -182,6 +321,12 @@ export function autoCompactionExtension(pi, options = {}) {
       tokensBefore,
       errorCategory: category,
       attemptCount: activeCycle?.attempts !== undefined ? activeCycle.attempts : 1,
+      conversationModel: conversationContext.conversationModel,
+      conversationProvider: conversationContext.conversationProvider,
+      contextWindow: conversationContext.contextWindow,
+      reserveTokens: conversationContext.reserveTokens,
+      keepRecentTokens: conversationContext.keepRecentTokens,
+      thresholdTokens: conversationContext.thresholdTokens,
     });
 
     activeUi = null;

@@ -13,6 +13,12 @@ const ALLOWLISTED_FIELDS = new Set([
   "usage",
   "attemptCount",
   "errorCategory",
+  "conversationModel",
+  "conversationProvider",
+  "contextWindow",
+  "reserveTokens",
+  "keepRecentTokens",
+  "thresholdTokens",
 ]);
 
 function sanitizeUsage(rawUsage) {
@@ -120,6 +126,22 @@ export class TelemetryLogger {
           if (typeof value === "number" && Number.isInteger(value) && value > 0) {
             record.attemptCount = value;
           }
+        } else if (
+          key === "contextWindow" ||
+          key === "reserveTokens" ||
+          key === "keepRecentTokens" ||
+          key === "thresholdTokens"
+        ) {
+          if (typeof value === "number" && Number.isInteger(value)) {
+            record[key] = value;
+          }
+        } else if (
+          key === "conversationModel" ||
+          key === "conversationProvider"
+        ) {
+          if (typeof value === "string") {
+            record[key] = value;
+          }
         } else if (key === "durationMs" || key === "tokensBefore") {
           if (typeof value === "number" && Number.isFinite(value)) {
             record[key] = value;
@@ -157,6 +179,12 @@ export class TelemetryLogger {
       tokensBefore: data.tokensBefore,
       usage: data.usage,
       attemptCount: data.attemptCount || 1,
+      conversationModel: data.conversationModel,
+      conversationProvider: data.conversationProvider,
+      contextWindow: data.contextWindow,
+      reserveTokens: data.reserveTokens,
+      keepRecentTokens: data.keepRecentTokens,
+      thresholdTokens: data.thresholdTokens,
     });
   }
 
@@ -176,6 +204,12 @@ export class TelemetryLogger {
       tokensBefore: data.tokensBefore,
       attemptCount: data.attemptCount || 1,
       errorCategory: data.errorCategory || "unknown",
+      conversationModel: data.conversationModel,
+      conversationProvider: data.conversationProvider,
+      contextWindow: data.contextWindow,
+      reserveTokens: data.reserveTokens,
+      keepRecentTokens: data.keepRecentTokens,
+      thresholdTokens: data.thresholdTokens,
     });
   }
 }
