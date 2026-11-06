@@ -980,7 +980,12 @@ test("canonical python backup snippet executes safely against controlled tempora
   const docsContent = fs.readFileSync(docsPath, "utf8");
   const snippetMatch = docsContent.match(/```python\n([\s\S]*?)```/);
   assert.ok(snippetMatch, "Canonical Python backup snippet must exist in docs/instalacion.md");
-  const pythonScript = snippetMatch[1];
+  const snippetLines = snippetMatch[1].split("\n");
+  const nonEmptyLines = snippetLines.filter((line) => line.trim().length > 0);
+  const commonIndent = nonEmptyLines.length
+    ? Math.min(...nonEmptyLines.map((line) => line.match(/^\s*/)[0].length))
+    : 0;
+  const pythonScript = snippetLines.map((line) => line.slice(commonIndent)).join("\n");
 
   const tempFixture = fs.mkdtempSync(path.join(os.tmpdir(), "pi-backup-test-"));
   trackedDeployFixtures.add(tempFixture);
