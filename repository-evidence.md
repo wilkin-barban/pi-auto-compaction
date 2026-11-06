@@ -460,3 +460,16 @@ Los 16 casos del verificador independiente `/tmp/pi-m3-final-LlHOI0/faults.json`
 
 Las tres guías de documentación (`docs/instalacion.md`, `docs/mantenimiento.md`, `docs/solucion-de-problemas.md`) contienen exclusivamente el procedimiento canónico en Python para snapshot seguro, sin duplicados en Shell. El script Python valida todos los ancestros con `lstat` rechazando symlinks, exige UID del usuario actual para archivos bajo `$HOME`, acepta root o UID actual para ancestros del sistema, requiere los 3 archivos regulares con `nlink == 1`, crea copias con `O_EXCL`/`0600` en un directorio exclusivo bajo `~/.local/state/pi-auto-compaction-backups` con permisos `0700`, y falla cerrado ante cualquier archivo faltante, symlink o UID ajeno. La prueba de integración `canonical python backup snippet executes safely against controlled temporary fixture` ejercita exitosamente este script contra fixtures sintéticos temporales sin credenciales reales.
 
+
+## Verificación del release 1.1.0 (2026-11-06)
+
+| Comprobación | Comando | Resultado |
+|---|---|---|
+| Suite completa | `npm test` | `# tests 232`, `# suites 12`, `# pass 232`, `# fail 0` |
+| Doctor (fixtures) | `node --test test/unit/doctor.test.mjs` | 13/13: 860k → 14% con advertencia; 140k → 86% sano; override no gestionado; loader con hash distinto → exit 2; árbol intacto |
+| Migración v1→v2 | `node --test test/integration/install-state.test.mjs` | 8/8: líneas base preservadas, nuevos modelos capturados, idempotencia, drift por modelo, rollback, adopción |
+| Dry-run sin escrituras | `node --test --test-name-pattern="dry-run creates no state"` | setup y rollback no crean `.pi-auto-compaction-state` ni lock |
+| Compatibilidad Pi 1.5.0 | `PI_COMPAT_VERSION=0.87.1 node scripts/compat/pi-1.5.0-smoke.mjs` | 5/5 checks (versión, defaults 16384/20000, exports, serialización, ciclo de hooks); CI lo repite contra 1.5.0 |
+| Doctor sobre el agente real | `node scripts/doctor.mjs --agent-dir "$HOME/.pi/agent"` | reporta política efectiva por modelo, origen de cada valor y estado de loader/manifiesto/marker/release |
+
+Commits de la tanda: `aabfce3` políticas+manifiesto v2, `4071c13` tests de migración, `3d213d8` `skipProviders`, `5fa910f` contexto de conversación, `b4e13df` y `101ba26` tests, `c1885a6` smoke CI, `c2cd711` doctor, `00d5967` dry-run y limpieza.

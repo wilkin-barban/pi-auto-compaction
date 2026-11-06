@@ -96,9 +96,23 @@ La documentación técnica completa está organizada en guías modulares:
 | `node scripts/deploy.mjs --dry-run` | `npm run deploy -- --dry-run` | Simula el despliegue sin modificar archivos ni configuración. |
 | `node scripts/deploy.mjs --update` | `npm run deploy -- --update` | Actualiza la instalación a partir de las fuentes actuales. |
 | `node scripts/deploy.mjs --rollback-source` | `npm run deploy -- --rollback-source` | Revierte el código activo al release anterior registrado (operación unitaria, repetirla es no-op). |
+| `node scripts/doctor.mjs` | `npm run doctor` | Diagnóstico de solo lectura: umbral efectivo por modelo, origen de cada valor, estado de loader/manifiesto/marker/release y último registro de telemetría. `--json` para consumo programático; sale 0 sano, 1 advertencias, 2 error. |
 | `node scripts/setup.mjs` | `npm run setup` | Configura el loader en el agente y aplica overrides de modelos. |
 | `node scripts/rollback.mjs` | `npm run rollback` | Desinstala el loader y restaura la configuración original de modelos. |
 | `node --test` | `npm test` | Ejecuta la suite completa de pruebas unitarias y de integración. |
+
+### Privacidad y omisión de proveedores
+
+La extensión resume la conversación con OmniRoute **para cualquier modelo de conversación**, incluidos DeepSeek y Gemini. Si un proveedor no debe salir del entorno local, agregalo a `skipProviders` para que ese modelo use la compactación nativa de Pi sin llamar al resumidor:
+
+```json
+{
+  "piAutoCompaction": { "skipProviders": ["deepseek", "commandcode"] }
+}
+```
+
+También se acepta la variable `PI_AUTO_COMPACTION_SKIP_PROVIDERS` (lista separada por comas). Los valores se normalizan a minúsculas y se comparan contra el proveedor del modelo de conversación; una entrada vacía o desconocida se ignora. `npm run doctor` no necesita esta configuración y nunca escribe.
+
 
 ---
 

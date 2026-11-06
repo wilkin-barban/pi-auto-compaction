@@ -8,6 +8,29 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 
 ---
 
+## [1.1.0] - 2026-11-06
+
+### Agregado
+
+- `--adopt-agent`: adopta una instalación previa válida del agente en una raíz gestionada nueva, con transacción, recibo y compensación CAS.
+- `npm run doctor`: diagnóstico de solo lectura con umbral efectivo por modelo, origen de cada valor, estado de loader/manifiesto/marker/release y último registro de telemetría; `--json` y códigos de salida 0/1/2.
+- Telemetría con contexto de conversación (`conversationModel`, `conversationProvider`, `contextWindow`, `reserveTokens`, `keepRecentTokens`, `thresholdTokens`), sin transcripciones ni credenciales.
+- `skipProviders` / `PI_AUTO_COMPACTION_SKIP_PROVIDERS` para que un proveedor concreto use la compactación nativa de Pi en lugar del resumidor.
+- Job de CI que instala Pi 1.5.0 y corre un smoke de exports, defaults y hooks.
+
+### Cambiado
+
+- Políticas de compactación por modelo en lugar de un valor global, con manifiesto v2 y migración idempotente desde v1 que preserva las líneas base originales.
+- DeepSeek `reserveTokens` 140.000 (dispara a 860k, 86%) y Gemini 200.000 (848.576, ~80,9%); OpenAI conserva 65.536/20.000. Corrige el override externo de 860k que compactaba DeepSeek al 14%.
+- `setup` y `rollback` ya no crean el directorio de estado en `--dry-run`.
+- Documentación: tabla de políticas, modelos no gestionados, privacidad del resumidor y uso de `doctor`.
+
+### Eliminado
+
+- `isOwnManifest` en `deploy.mjs` (definido y nunca llamado).
+
+---
+
 ## [1.0.0] - 2026-10-01
 
 ### Añadido
