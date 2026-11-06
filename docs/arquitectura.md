@@ -14,7 +14,7 @@ En una instalación estándar de Pi, la compactación de contexto utiliza el mis
 [Conversación activa en Pi] (ej. gpt-6-sol / gpt-6.1-sol)
               │
               ▼
-   ¿Tokens > 206.464 (~76%)?
+   ¿Tokens > umbral efectivo (ventana − reserveTokens)?
               │
               ├─ No ──► Continúa conversación normal
               │
@@ -124,6 +124,8 @@ Con la política DeepSeek (`1.000.000 - 140.000 = 860.000`) la compactación se 
 ### Modelos no gestionados
 
 Cualquier identificador fuera de la tabla no se modifica: conserva el override del usuario o, si no tiene, los defaults de Pi (`reserveTokens` 16.384, `keepRecentTokens` 20.000). Un override externo sobre un modelo gestionado se detecta como drift en setup/rollback, y `npm run doctor` lo advierte sin bloquear ni escribir. Para gestionar un modelo nuevo hay que agregarlo a `MANAGED_POLICIES` en `src/install-state.mjs`, actualizar las pruebas de `test/integration/install-state.test.mjs` y publicar un release.
+
+Para que un proveedor concreto use la compactación nativa de Pi sin pasar por OmniRoute, definí `PI_AUTO_COMPACTION_SKIP_PROVIDERS` (lista separada por comas, match exacto y sensible a mayúsculas) o pasá `skipProviders` al cargar la extensión. El loader gestionado usa la variable de entorno.
 
 ---
 

@@ -33,7 +33,7 @@ Para minimizar cualquier riesgo de filtración de información:
 ### Telemetría local
 - Los registros de compactación se almacenan localmente en `$HOME/.local/state/pi-auto-compaction/compaction.jsonl`.
 - El archivo se crea con permisos estrictos `0600` (lectura/escritura exclusiva del usuario) dentro de un directorio con permisos `0700`.
-- **Lista blanca de campos**: Se registran únicamente métricas operativas cuantitativas (marca de tiempo, identificador de sesión, motivo, modelo, estado, duración en milisegundos, tokens antes de compactar `tokensBefore`, uso de tokens si está disponible, conteo de intentos, categoría de error). **No se registra `tokensAfter`**.
+- **Lista blanca de campos**: Se registran únicamente métricas operativas cuantitativas (marca de tiempo, identificador de sesión, motivo, modelo resumidor, estado, duración en milisegundos, tokens antes de compactar `tokensBefore`, uso de tokens si está disponible, conteo de intentos, categoría de error) y metadatos del contexto de conversación (modelo y proveedor de conversación, ventana de contexto, `reserveTokens`, `keepRecentTokens` y `thresholdTokens`). **No se registra `tokensAfter`**.
 - **Datos expresamente excluidos**: El sistema filtra y descarta de forma terminante transcripciones de chat, claves de API, tokens de sesión, variables de entorno y rutas completas del sistema de archivos.
 
 ### Transmisión hacia resumidores de OmniRoute

@@ -11,11 +11,13 @@ Antes de proceder con la instalación, verifique que su entorno cumple los sigui
 | Componente | Requisito | Notas |
 |---|---|---|
 | **Sistema Operativo** | Linux | Entorno validado. No se garantiza soporte formal en macOS o Windows nativo. |
-| **Node.js** | `>=22.19.0` | Requerido por el SDK de Pi y los temporizadores de prueba (`MockTimers`). Matriz de CI configurada para Node 22 y 24; verificado localmente en Node 22.23.2 con SDK 0.87.1 (ejecución remota en CI pendiente del primer push; se requiere Node >= 22.19 sin garantía para todas las versiones futuras no probadas). |
-| **Pi Coding Agent** | Instalación activa | Directorio de configuración por defecto: `$HOME/.pi/agent` (o variable `PI_CODING_AGENT_DIR`). |
+| **Node.js** | `>=22.19.0` | Requerido por el SDK de Pi y los temporizadores de prueba (`MockTimers`). Matriz de CI para Node 22 y 24; validado localmente en Node 22.23.2 con SDK 0.87.1 y smoke de Pi 1.5.0 en CI; se requiere Node >= 22.19 sin garantía para todas las versiones futuras no probadas. |
+| **Pi Coding Agent** | Instalación activa | Directorio de configuración por defecto: `$HOME/.pi/agent` (o variable `PI_CODING_AGENT_DIR`). En gentle-shell, el home de Pi es el mismo y el loader se instala en `extensions/omniroute-compaction.ts`. |
 | **Proveedor OmniRoute** | Configurado en Pi | Se requieren credenciales activas y acceso a los modelos de resumen definidos. |
-| **Credenciales de conversación** | Activas en Pi | Credenciales válidas para OpenAI (o el modelo de chat activo) en `auth.json`, requeridas para validar autenticación previa al hook (la validación previa verifica credenciales de autenticación, no cuota universal del proveedor). |
+| **Credenciales de conversación** | Activas en Pi | Credenciales válidas para el modelo de chat activo (OpenAI, DeepSeek/Command Code, Gemini, etc.) en `auth.json`, requeridas para validar autenticación previa al hook (la validación previa verifica credenciales de autenticación, no cuota universal del proveedor). |
 | **GitHub CLI / Git** | Autenticación privada | Acceso concedido al repositorio privado `https://github.com/wilkinbarban/pi-auto-compaction`. |
+
+> **Nota para gentle-shell**: si es la única instalación de Pi y el loader no resuelve el SDK, definí `PI_CODING_AGENT_PATH` apuntando al paquete de Pi que usa gentle-shell o instalá Pi global. El resolvedor de `src/pi-sdk.mjs` prueba el SDK local, `~/.local/lib/node_modules`, `/usr/local/lib/node_modules` y `/usr/lib/node_modules`.
 
 ---
 
@@ -24,7 +26,7 @@ Antes de proceder con la instalación, verifique que su entorno cumple los sigui
 El código fuente de este paquete es estrictamente privado (`UNLICENSED`).
 
 - **Autenticación con GitHub**: Se realiza mediante `gh auth login` o claves SSH privadas asociadas a su cuenta de GitHub.
-- **Credenciales de IA y modelos**: Las claves de API de OmniRoute y OpenAI **nunca** deben residir en este repositorio ni copiarse en el árbol de trabajo. Permanecen bajo la gestión exclusiva de Pi en `$HOME/.pi/agent/auth.json`.
+- **Credenciales de IA y modelos**: Las claves de API de OmniRoute y del proveedor de conversación (OpenAI, DeepSeek/Command Code, Gemini, etc.) **nunca** deben residir en este repositorio ni copiarse en el árbol de trabajo. Permanecen bajo la gestión exclusiva de Pi en `$HOME/.pi/agent/auth.json`.
 - **Telemetría y estado**: La telemetría operativa se registra en `$HOME/.local/state/pi-auto-compaction/compaction.jsonl` (metadatos mínimos cuantificables únicamente, sin `tokensAfter` ni transcripciones; el contexto de conversación se transmite deliberadamente a la API de OmniRoute para generar el resumen). Los journals transaccionales de despliegue residen en `<install-dir>/journals/`, y el journal de recuperación de agente en `<agent-dir>/.pi-auto-compaction-state/recovery-journal.json`. La carpeta `~/.local/state/pi-auto-compaction` es exclusiva para telemetría.
 
 ---
@@ -46,7 +48,7 @@ Para garantizar que las sesiones de Pi no queden corruptas durante actualizacion
    - Archivo TypeScript generado automáticamente que Pi carga al inicio. Importa dinámicamente el `index.mjs` del release activo actual.
 4. **Manifiesto de configuración (Manifest)**:
    - Ruta por defecto: `$HOME/.pi/agent/.pi-auto-compaction-manifest.json`.
-   - Registra el estado base previo a la instalación de los cuatro modelos gestionados (`gpt-6-sol` y `gpt-6.1-sol` bajo `openai` y `openai-codex`) en el campo `originalOverrides` (línea base original preservada de forma inmutable estrictamente para desinstalación, no para restaurar mientras la extensión esté instalada) y los valores gestionados esperados en `expectedManagedValues` para la detección de drift.
+   - Registra el estado base previo de los **ocho modelos gestionados** en el campo `originalOverrides` (línea base original preservada de forma inmutable estrictamente para desinstalación, no para restaurar mientras la extensión esté instalada) y las **políticas por modelo** en `policies` (manifiesto v2) para la detección de drift. Los manifiestos v1 de cuatro modelos se migran a v2 preservando `originalOverrides`.
    - Registra el hash del loader (`loaderHash`) y coordina el journal transaccional temporal del agente en `$HOME/.pi/agent/.pi-auto-compaction-state/recovery-journal.json`.
 
 ---
@@ -69,7 +71,7 @@ npm ci --ignore-scripts
 npm test
 ```
 
-> **Verificación esperada**: La suite debe ejecutar y aprobar todas las pruebas unitarias y de integración sin fallos ni cancelaciones; consulte la salida de `npm test` y `repository-evidence.md` para el recuento verificado de referencia (176 pruebas en 10 suites observadas actualmente).
+> **Verificación esperada**: La suite debe ejecutar y aprobar todas las pruebas unitarias y de integración sin fallos ni cancelaciones. La referencia actual es **232 pruebas en 12 suites**; el número exacto lo imprime `npm test` y también queda registrado en `repository-evidence.md`.
 
 ### Paso 3: Simular el despliegue con `--dry-run`
 
@@ -85,7 +87,7 @@ El modo `--dry-run` de `deploy.mjs` es **estrictamente de solo lectura**:
 - Verifica permisos de usuario, ownership y ausencia de symlinks peligrosos.
 - **No crea directorios, no copia archivos ni modifica archivos de configuración.**
 
-> **Nota técnica sobre `setup.mjs --dry-run`**: Tenga en cuenta que el script directo de configuración (`setup.mjs`) crea su directorio de estado incluso cuando se ejecuta en modo dry-run. Por esta razón, se recomienda usar siempre `node scripts/deploy.mjs --dry-run`.
+> **Nota sobre `setup.mjs --dry-run`**: Tanto `deploy.mjs` como `setup.mjs` y `rollback.mjs` son de solo lectura en `--dry-run`; no crean el directorio de estado. Aun así, se recomienda usar `node scripts/deploy.mjs --dry-run` porque valida el paquete completo, la allowlist de archivos y el release antes de escribir.
 
 ### Paso 4: Ejecutar el despliegue durable
 
@@ -106,8 +108,18 @@ Este comando ejecuta las siguientes acciones de forma coordinada:
 3. Crea el directorio de release `$INSTALL_DIR/releases/<sha256>`.
 4. Copia los archivos del paquete de forma atómica y verifica sus hashes con `.release.json`.
 5. Registra el estado `state: "pending"` en `$INSTALL_DIR/.pi-auto-compaction-deploy.json` y escribe un journal en `$INSTALL_DIR/journals/<lockToken>.json`.
-6. Invoca `setup.mjs` sobre el nuevo release, registrando `originalOverrides` y `expectedManagedValues` en el manifiesto `$AGENT_DIR/.pi-auto-compaction-manifest.json`, creando un journal temporal en `$AGENT_DIR/.pi-auto-compaction-state/recovery-journal.json` e instalando el loader en `$AGENT_DIR/extensions/omniroute-compaction.ts`.
+6. Invoca `setup.mjs` sobre el nuevo release, registrando `originalOverrides` y `policies` en el manifiesto `$AGENT_DIR/.pi-auto-compaction-manifest.json`, creando un journal temporal en `$AGENT_DIR/.pi-auto-compaction-state/recovery-journal.json` e instalando el loader en `$AGENT_DIR/extensions/omniroute-compaction.ts`.
 7. Tras verificar el setup, limpia el journal del agente, marca el journal de despliegue como comprometido, transiciona el marcador a `state: "ready"` y publica el release en el campo `current`.
+
+### Verificación del estado efectivo
+
+Ejecutá el diagnóstico de solo lectura antes de recargar:
+
+```bash
+npm run doctor -- --agent-dir "$AGENT_DIR" --install-dir "$INSTALL_DIR"
+```
+
+Debe reportar `healthy`, exit `0`, y el umbral efectivo de cada modelo. Si aparece una advertencia con `DeepSeek 860000 → 14%`, el override viejo sigue presente y el deploy no aplicó la política nueva.
 
 ### Paso 5: Recargar Pi
 
@@ -167,8 +179,8 @@ Por diseño y seguridad del usuario, `deploy.mjs` nunca asume el control de un a
 
 3. **Prerrequisitos y guardias de validación de adopción**:
    - **Agente previamente gestionado y válido**: Requiere que existan tanto el manifiesto `.pi-auto-compaction-manifest.json` como el loader oficial `extensions/omniroute-compaction.ts`. No se permite adoptar agentes con archivos desconocidos o sin manifiesto.
-   - **Integridad de hash y esquema**: El hash del loader debe coincidir con `loaderHash` del manifiesto, cumplir la versión `1.0.0`, incluir exactamente los 4 modelos gestionados (`openai/gpt-6-sol`, `openai/gpt-6.1-sol`, `openai-codex/gpt-6-sol`, `openai-codex/gpt-6.1-sol`) y la estructura estricta de `originalOverrides`.
-   - **Ausencia de drift**: Los valores de tokens en `settings.json` deben coincidir con `expectedManagedValues`. Si hubo modificaciones externas no registradas, la adopción es rechazada fail-closed.
+   - **Integridad de hash y esquema**: El hash del loader debe coincidir con `loaderHash` del manifiesto, aceptar la versión `1.0.0` (se migra a v2) o `2.0.0`, incluir la política de los ocho modelos gestionados y la estructura estricta de `originalOverrides`/`policies`.
+   - **Ausencia de drift**: Los valores de tokens en `settings.json` deben coincidir con la política del modelo en `policies` (o con los valores v1 equivalentes). Si hubo modificaciones externas no registradas, la adopción es rechazada fail-closed.
    - **Sin bloqueos ni journals activos**: No debe haber `.pi-auto-compaction.lock` ni `recovery-journal.json` pendientes en el agente.
    - **Raíz de instalación nueva e inexistente**: El `--install-dir` destino debe ser una ruta **nueva que no exista previamente**. Si el directorio ya existe, se rechaza inmediatamente para evitar colisiones.
    - **Fuente antigua intacta y válida**: La fuente referenciada en `packageSourceDir` del manifiesto previo debe existir, tener metadatos válidos de paquete (`name: "pi-auto-compaction"`) y scripts de setup/rollback. Esta fuente antigua **se conserva intacta en disco y nunca se modifica ni elimina**, permitiendo que sesiones activas sigan operando y sirviendo de respaldo de seguridad.

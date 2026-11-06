@@ -23,7 +23,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - Políticas de compactación por modelo en lugar de un valor global, con manifiesto v2 y migración idempotente desde v1 que preserva las líneas base originales.
 - DeepSeek `reserveTokens` 140.000 (dispara a 860k, 86%) y Gemini 200.000 (848.576, ~80,9%); OpenAI conserva 65.536/20.000. Corrige el override externo de 860k que compactaba DeepSeek al 14%.
 - `setup` y `rollback` ya no crean el directorio de estado en `--dry-run`.
-- Documentación: tabla de políticas, modelos no gestionados, privacidad del resumidor y uso de `doctor`.
+- Documentación alineada con manifiesto v2, ocho modelos, `skipProviders` por entorno, `npm run doctor`, dry-run read-only y conteos actuales de la suite.
 
 ### Eliminado
 

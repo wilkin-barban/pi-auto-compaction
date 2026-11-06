@@ -7,15 +7,20 @@ Este documento reúne los diagnósticos más comunes, las causas subyacentes y l
 ## 1. La compactación no se ejecuta o falla por autenticación antes del hook
 
 ### Síntoma
-El contexto supera los 206.464 tokens, pero la compactación automática no se inicia, o Pi muestra un error de autenticación inmediatamente antes de intentar compactar. En los registros de telemetría de la extensión no aparece ningún evento nuevo.
+El contexto supera el umbral efectivo del modelo (por ejemplo, 334.464 en OpenAI, 860.000 en DeepSeek o 848.576 en Gemini), pero la compactación automática no se inicia, o Pi muestra un error de autenticación inmediatamente antes de intentar compactar. En los registros de telemetría de la extensión no aparece ningún evento nuevo.
 
 ### Causa raíz
-En la arquitectura del SDK de Pi (`AgentSession._runAutoCompaction`), el sistema verifica la autenticación del **modelo de conversación activo** (por ejemplo, OpenAI `gpt-6-sol` o `gpt-6.1-sol`) mediante `_getSummarizationRequestAuth(model)` **antes** de emitir el hook `session_before_compact`. Si las credenciales de OpenAI en `auth.json` están expiradas o faltan, Pi aborta la operación antes de invocar la extensión. Esta comprobación previa valida **autenticación** (presencia de credenciales válidas), no cuota universal del proveedor. Los errores de cuota o indisponibilidad de proveedores ocurren durante la fase de petición del modelo y no impiden la invocación del hook.
+En la arquitectura del SDK de Pi (`AgentSession._runAutoCompaction`), el sistema verifica la autenticación del **modelo de conversación activo** (por ejemplo, `openai-codex/gpt-6.1-sol` o `commandcode/deepseek/deepseek-v4.1-flash`) mediante `_getSummarizationRequestAuth(model)` **antes** de emitir el hook `session_before_compact`. Si las credenciales del proveedor de conversación en `auth.json` están expiradas o faltan, Pi aborta la operación antes de invocar la extensión. Esta comprobación previa valida **autenticación** (presencia de credenciales válidas), no cuota universal del proveedor. Los errores de cuota o indisponibilidad de proveedores ocurren durante la fase de petición del modelo y no impiden la invocación del hook.
 
 ### Solución
 1. Compruebe la validez de las credenciales de su modelo de conversación en `$HOME/.pi/agent/auth.json`.
 2. Verifique que puede ejecutar una interacción normal con el modelo principal en Pi.
 3. Una vez restablecida la autenticación de conversación, Pi alcanzará el hook y la extensión tomará el control del resumen.
+4. Para confirmar el umbral efectivo y el origen de cada valor, ejecutá:
+
+   ```bash
+   npm run doctor -- --agent-dir "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}" --install-dir "${PI_AUTO_COMPACTION_INSTALL_DIR:-$HOME/.local/share/pi-auto-compaction}"
+   ```
 
 ---
 
@@ -28,8 +33,8 @@ La compactación tarda más tiempo del habitual (cerca de 60–120 segundos) y e
 Ambos modelos de resumen se sirven a través de la infraestructura de OmniRoute. Si la pasarela de OmniRoute experimenta indisponibilidad, saturación o corte de red, ambos intentos pueden agotar su tiempo de espera (60 s cada uno) o retornar error de servicio.
 
 ### Comportamiento del sistema
-La extensión retorna `undefined` a Pi para que este intente compactar usando su motor nativo (OpenAI). Sin embargo, tenga en cuenta:
-- **El éxito del fallback nativo no está garantizado**: Si la causa raíz es un corte general de conexión a Internet, el modelo nativo de OpenAI también fallará.
+La extensión retorna `undefined` a Pi para que este intente compactar usando su motor nativo (el modelo de conversación activo). Sin embargo, tenga en cuenta:
+- **El éxito del fallback nativo no está garantizado**: Si la causa raíz es un corte general de conexión a Internet, el modelo de conversación también fallará.
 - La extensión no genera fallos fatales no controlados; registra el evento en telemetría y cede el control limpiamente.
 
 ### Diagnóstico
@@ -69,7 +74,7 @@ Una ejecución previa de despliegue o desinstalación fue interrumpida abruptame
 
 ### Causa raíz
 El sistema detectó que:
-- Los campos gestionados (`reserveTokens` o `keepRecentTokens`) de los cuatro modelos en `settings.json` difieren de los valores esperados (`expectedManagedValues`) registrados en el manifiesto.
+- Los campos gestionados (`reserveTokens` o `keepRecentTokens`) de los ocho modelos en `settings.json` difieren de la política correspondiente en `policies` del manifiesto.
 - El loader oficial `omniroute-compaction.ts` fue editado o reemplazado por un archivo no reconocido (su hash difiere de `loaderHash`).
 - El archivo `.pi-auto-compaction-manifest.json` fue modificado o eliminado mientras el loader seguía activo.
 
@@ -82,10 +87,14 @@ La línea base original (`originalOverrides`) capturada en el manifiesto es inmu
    AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
    INSTALL_DIR="$HOME/.local/share/pi-auto-compaction"
    ```
-2. Abra `$AGENT_DIR/.pi-auto-compaction-manifest.json` y compare los valores esperados (`expectedManagedValues`) con los valores actuales en `$AGENT_DIR/settings.json`.
-3. Restaure manualmente la coherencia en `settings.json` para que coincida con `expectedManagedValues`, preservando las configuraciones ajenas y sin exponer secretos.
-4. Nunca elimine marcadores ni manifiestos de propiedad para ocultar el drift.
-5. Vuelva a ejecutar la validación con:
+2. Ejecutá el diagnóstico de solo lectura para identificar el modelo y el umbral fuera de política:
+   ```bash
+   npm run doctor -- --agent-dir "$AGENT_DIR" --install-dir "$INSTALL_DIR"
+   ```
+3. Abra `$AGENT_DIR/.pi-auto-compaction-manifest.json` y compare la política del modelo en `policies` (o los valores v1 equivalentes) con los valores actuales en `$AGENT_DIR/settings.json`.
+4. Restaure manualmente la coherencia en `settings.json` para que coincida con la política del modelo en `policies`, preservando las configuraciones ajenas y sin exponer secretos.
+5. Nunca elimine marcadores ni manifiestos de propiedad para ocultar el drift.
+6. Vuelva a ejecutar la validación con:
    ```bash
    node scripts/deploy.mjs --update --dry-run --agent-dir "$AGENT_DIR" --install-dir "$INSTALL_DIR"
    ```
@@ -106,7 +115,7 @@ Al ejecutar el despliegue, el comando finaliza con errores como:
 - Si el directorio de instalación ya existe pero no contiene el marcador canónico `.pi-auto-compaction-deploy.json`, la operación se rechaza para evitar sobreescribir archivos desconocidos.
 - Si el directorio del agente (`$AGENT_DIR`) ya contiene un loader o un manifiesto sin una release activa gestionada, y se invoca `deploy.mjs` sin bandera, se rechaza categóricamente (`Foreign agent manifest/loader: ownership refused`).
 - Si se invoca `--adopt-agent` pero la raíz de instalación ya existe en disco, se rechaza con `Adoption requires a new, non-existent install root`.
-- Si se invoca `--adopt-agent` pero el agente no cuenta con manifiesto o loader oficial válidos, o se detecta drift en los 4 modelos gestionados, se rechaza fail-closed antes de cualquier escritura.
+- Si se invoca `--adopt-agent` pero el agente no cuenta con manifiesto o loader oficial válidos, o se detecta drift en los ocho modelos gestionados, se rechaza fail-closed antes de cualquier escritura.
 
 ### Procedimiento de adopción mediante `--adopt-agent`
 Para adoptar de forma segura un agente con una instalación previa válida hacia una nueva raíz gestionada:
@@ -137,8 +146,8 @@ Para adoptar de forma segura un agente con una instalación previa válida hacia
    ```
 
 5. **Prerrequisitos, comportamiento observado y límites de reversión**:
-   - El agente debe contar con manifiesto versión `1.0.0` y loader oficial cuyo hash coincida exactamente con `loaderHash`.
-   - Los cuatro modelos gestionados (`gpt-6-sol` y `gpt-6.1-sol` bajo `openai` y `openai-codex`) no deben presentar drift respecto a `expectedManagedValues`.
+   - El agente debe contar con manifiesto `1.0.0` (se migra a v2) o `2.0.0` y loader oficial cuyo hash coincida exactamente con `loaderHash`.
+   - Los ocho modelos gestionados no deben presentar drift respecto a la política correspondiente en `policies`.
    - La fuente antigua referenciada en el manifiesto previo debe existir, ser válida y se conserva intacta en disco como respaldo inmutable (nunca se borra ni se modifica).
    - El nuevo release inmutable se copia a `$INSTALL_DIR/releases/<sha256>`, el marcador se establece en `state: "ready"` con `previous: null`, y el loader se actualiza para apuntar al nuevo release preservando la línea base `originalOverrides`.
    - **Límites de rollback**:

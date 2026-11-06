@@ -74,6 +74,14 @@ npm run deploy -- --update --agent-dir "$AGENT_DIR" --install-dir "$INSTALL_DIR"
 **Comportamiento de optimización (No-op por hash)**:
 Si el código fuente actual no presenta cambios respecto al release actualmente activo, `deploy.mjs` informa que la versión ya está instalada y termina sin modificar el loader, los manifiestos ni los archivos de configuración.
 
+Tras aplicar la actualización, verificá el estado efectivo:
+
+```bash
+npm run doctor -- --agent-dir "$AGENT_DIR" --install-dir "$INSTALL_DIR"
+```
+
+Debe reportar `healthy`, exit `0`, con la política de los ocho modelos y sin advertencias.
+
 ### Paso 7: Recargar Pi
 
 Dentro de cualquier sesión activa de Pi:
@@ -123,7 +131,7 @@ Existen dos tipos fundamentales de reversión en el sistema. Es crucial entender
 El sistema aplica una política estricta de seguridad ante modificaciones no autorizadas (drift):
 
 1. **Definición de Drift**:
-   - Se comparan los valores gestionados actuales en `$AGENT_DIR/settings.json` (`reserveTokens` y `keepRecentTokens` para los cuatro modelos gestionados) contra `expectedManagedValues` registrado en el manifiesto.
+   - Se comparan los valores gestionados actuales en `$AGENT_DIR/settings.json` (`reserveTokens` y `keepRecentTokens` para los ocho modelos gestionados) contra la política correspondiente en `policies` del manifiesto (o los valores v1 equivalentes en un manifiesto migrado).
    - Si el loader `$AGENT_DIR/extensions/omniroute-compaction.ts` fue editado manualmente o reemplazado por un archivo ajeno (su hash difiere de `loaderHash`).
    - Si el manifiesto `.pi-auto-compaction-manifest.json` fue modificado o eliminado mientras el loader sigue presente.
 2. **Inmutabilidad de la línea base original**: La línea base original (`originalOverrides`) capturada en la instalación se mantiene inmutable exclusivamente para restaurar el estado en la desinstalación (`rollback.mjs`); **nunca se utiliza para sobrescribir configuraciones durante la ejecución activa de la extensión**.
@@ -159,4 +167,5 @@ Durante cualquier operación de despliegue o desinstalación, el sistema registr
 ## 5. Compatibilidad y Actualizaciones Mayores del SDK de Pi
 
 - **Fijación de versiones (Pinning)**: Las dependencias `@earendil-works/pi-coding-agent` y `@earendil-works/pi-ai` están fijadas con versión exacta `0.87.1` en `package.json`. No se utilizan comodines de rango (`^` o `~`).
+- **Compatibilidad con Pi 1.5.0**: El job de CI `compat-pi-1-5` instala `@earendil-works/pi-coding-agent@1.5.0` y ejecuta `scripts/compat/pi-1.5.0-smoke.mjs` (versión, defaults 16384/20000, exports, serialización y hooks). El pin de desarrollo `0.87.1` se mantiene para no alterar el lockfile.
 - **Verificación previa a la actualización del SDK**: Si se planea actualizar el paquete global de Pi en el sistema, clone primero los cambios en este repositorio, actualice el pin local, ejecute `npm test` y compruebe que los hooks del ciclo de vida (`session_before_compact`, `session_compact`, `session_compact_failed`) sigan manteniendo el mismo contrato antes de desplegar en producción.
