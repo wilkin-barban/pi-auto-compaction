@@ -336,4 +336,250 @@ describe("extension-lifecycle integration", () => {
     const lines = fs.readFileSync(telemetryFile, "utf-8").trim().split("\n");
     assert.equal(lines.length, 2, "Both distinct cycles in the same session must be recorded");
   });
+
+  it("records conversation context in telemetry on terminal success with effective settings", async () => {
+    const { mockPi, mockCtx, handlers } = createHarness();
+    mockCtx.model = {
+      provider: "deepseek",
+      id: "deepseek-v4.1-flash",
+      contextWindow: 1000000,
+    };
+
+    const agentDir = path.join(tempDir, "agent");
+    fs.mkdirSync(agentDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(agentDir, "settings.json"),
+      JSON.stringify({
+        compaction: {
+          modelOverrides: {
+            "deepseek/deepseek-v4.1-flash": {
+              reserveTokens: 140000,
+              keepRecentTokens: 20000,
+            },
+          },
+        },
+      }),
+    );
+
+    autoCompactionExtension(mockPi, {
+      telemetryPath: telemetryFile,
+      agentDir,
+    });
+
+    const beforeCompactHandler = handlers.get("session_before_compact");
+    await beforeCompactHandler(
+      {
+        type: "session_before_compact",
+        preparation: {
+          firstKeptEntryId: "entry-ctx-succ",
+          messagesToSummarize: [{ role: "user", content: [{ type: "text", text: "DeepSeek chat" }] }],
+          turnPrefixMessages: [],
+          isSplitTurn: false,
+          tokensBefore: 865000,
+          fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+        },
+        branchEntries: [],
+        reason: "threshold",
+        willRetry: false,
+        signal: new AbortController().signal,
+      },
+      mockCtx,
+    );
+
+    const compactHandler = handlers.get("session_compact");
+    await compactHandler(
+      {
+        type: "session_compact",
+        compactionEntry: { id: "comp-ctx-succ", type: "compaction", tokensBefore: 865000 },
+        fromExtension: true,
+        reason: "threshold",
+        willRetry: false,
+      },
+      mockCtx,
+    );
+
+    const lines = fs.readFileSync(telemetryFile, "utf-8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    const entry = JSON.parse(lines[0]);
+    assert.equal(entry.status, "success");
+    assert.equal(entry.model, "omniroute/antigravity/gemini-3.8-flash-tiered", "Summarizer model remains in model field");
+    assert.equal(entry.conversationModel, "deepseek-v4.1-flash");
+    assert.equal(entry.conversationProvider, "deepseek");
+    assert.equal(entry.contextWindow, 1000000);
+    assert.equal(entry.reserveTokens, 140000);
+    assert.equal(entry.keepRecentTokens, 20000);
+    assert.equal(entry.thresholdTokens, 860000);
+  });
+
+  it("records conversation context in telemetry on terminal failure with effective settings", async () => {
+    const { mockPi, mockCtx, handlers } = createHarness();
+    mockCtx.model = {
+      provider: "deepseek",
+      id: "deepseek-v4.1-flash",
+      contextWindow: 1000000,
+    };
+
+    const agentDir = path.join(tempDir, "agent");
+    fs.mkdirSync(agentDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(agentDir, "settings.json"),
+      JSON.stringify({
+        compaction: {
+          modelOverrides: {
+            "deepseek/deepseek-v4.1-flash": {
+              reserveTokens: 140000,
+              keepRecentTokens: 20000,
+            },
+          },
+        },
+      }),
+    );
+
+    autoCompactionExtension(mockPi, {
+      telemetryPath: telemetryFile,
+      agentDir,
+    });
+
+    const beforeCompactHandler = handlers.get("session_before_compact");
+    await beforeCompactHandler(
+      {
+        type: "session_before_compact",
+        preparation: {
+          firstKeptEntryId: "entry-ctx-fail",
+          messagesToSummarize: [{ role: "user", content: [{ type: "text", text: "DeepSeek chat" }] }],
+          turnPrefixMessages: [],
+          isSplitTurn: false,
+          tokensBefore: 870000,
+          fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+        },
+        branchEntries: [],
+        reason: "threshold",
+        willRetry: false,
+        signal: new AbortController().signal,
+      },
+      mockCtx,
+    );
+
+    const compactFailedHandler = handlers.get("session_compact_failed");
+    await compactFailedHandler(
+      {
+        type: "session_compact_failed",
+        reason: "threshold",
+        errorMessage: "Network timeout communicating with OmniRoute gateway",
+        aborted: false,
+        willRetry: false,
+        fromExtension: true,
+      },
+      mockCtx,
+    );
+
+    const lines = fs.readFileSync(telemetryFile, "utf-8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    const entry = JSON.parse(lines[0]);
+    assert.equal(entry.status, "failed");
+    assert.equal(entry.model, "omniroute/antigravity/gemini-3.8-flash-tiered");
+    assert.equal(entry.conversationModel, "deepseek-v4.1-flash");
+    assert.equal(entry.conversationProvider, "deepseek");
+    assert.equal(entry.contextWindow, 1000000);
+    assert.equal(entry.reserveTokens, 140000);
+    assert.equal(entry.keepRecentTokens, 20000);
+    assert.equal(entry.thresholdTokens, 860000);
+    assert.equal(entry.errorCategory, "timeout");
+  });
+
+  it("delegates a skipped conversation provider to native compaction without summarizing", async () => {
+    const { mockPi, mockCtx, handlers } = createHarness();
+    let completions = 0;
+    mockCtx.model = { provider: "deepseek", id: "deepseek/deepseek-v4.1-flash", contextWindow: 1000000 };
+    mockCtx.modelRegistry.complete = async () => {
+      completions += 1;
+      throw new Error("a skipped provider must never reach OmniRoute");
+    };
+    const agentDir = path.join(tempDir, "agent");
+    fs.mkdirSync(agentDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(agentDir, "settings.json"),
+      JSON.stringify({
+        compaction: {
+          modelOverrides: {
+            "deepseek/deepseek/deepseek-v4.1-flash": {
+              reserveTokens: 140000,
+              keepRecentTokens: 20000,
+            },
+          },
+        },
+      }),
+    );
+
+    autoCompactionExtension(mockPi, { telemetryPath: telemetryFile, agentDir, skipProviders: ["deepseek"] });
+
+    const result = await handlers.get("session_before_compact")(
+      {
+        type: "session_before_compact",
+        preparation: {
+          firstKeptEntryId: "entry-1",
+          messagesToSummarize: [{ role: "user", content: [{ type: "text", text: "Hola" }] }],
+          turnPrefixMessages: [],
+          isSplitTurn: false,
+          tokensBefore: 900000,
+          fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+        },
+        branchEntries: [],
+        reason: "threshold",
+        willRetry: false,
+        signal: new AbortController().signal,
+      },
+      mockCtx,
+    );
+
+    assert.equal(result, undefined, "native compaction must be allowed to run");
+    assert.equal(completions, 0, "no OmniRoute completion for a skipped provider");
+
+    await handlers.get("session_compact")(
+      {
+        type: "session_compact",
+        compactionEntry: { id: "comp-native", type: "compaction", tokensBefore: 900000 },
+        fromExtension: false,
+        reason: "threshold",
+        willRetry: false,
+      },
+      mockCtx,
+    );
+
+    const entry = JSON.parse(fs.readFileSync(telemetryFile, "utf-8").trim());
+    assert.equal(entry.model, "native");
+    assert.equal(entry.conversationProvider, "deepseek");
+    assert.equal(entry.thresholdTokens, 860000);
+  });
+
+  it("still summarizes a provider that is not in the skip list", async () => {
+    const { mockPi, mockCtx, handlers } = createHarness();
+    mockCtx.model = { provider: "openai", id: "gpt-6-sol", contextWindow: 400000 };
+    const agentDir = path.join(tempDir, "agent");
+    fs.mkdirSync(agentDir, { recursive: true });
+    fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({}));
+
+    autoCompactionExtension(mockPi, { telemetryPath: telemetryFile, agentDir, skipProviders: ["deepseek"] });
+
+    const result = await handlers.get("session_before_compact")(
+      {
+        type: "session_before_compact",
+        preparation: {
+          firstKeptEntryId: "entry-2",
+          messagesToSummarize: [{ role: "user", content: [{ type: "text", text: "Hola" }] }],
+          turnPrefixMessages: [],
+          isSplitTurn: false,
+          tokensBefore: 250000,
+          fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+        },
+        branchEntries: [],
+        reason: "threshold",
+        willRetry: false,
+        signal: new AbortController().signal,
+      },
+      mockCtx,
+    );
+
+    assert.ok(result.compaction, "an unlisted provider keeps the OmniRoute summary");
+  });
 });
