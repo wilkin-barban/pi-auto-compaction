@@ -259,4 +259,6 @@ This repository and its configuration files **never store credentials**. All API
 ### Project Policies
 - [**Changelog**](CHANGELOG.md): Historical record of versions and changes.
 - [**Security Policy**](SECURITY.md): Vulnerability reporting procedures and privacy guarantees.
-- [**Contributing Guide**](CONTRIBUTING.md): Strict TDD guidelines, testing conventions, and SDK pinning.
+- [**Contributing Guide**](CONTRIBUTING.md) / [Guía en español](CONTRIBUTING.es.md): fork/PR flow, TDD discipline, tests, docs and contribution license.
+- [**Code of Conduct**](CODE_OF_CONDUCT.md) / [Código de Conducta](CODE_OF_CONDUCT.es.md): community standards and private reporting.
+- [**Pull request template**](.github/PULL_REQUEST_TEMPLATE.md) and [issue templates](.github/ISSUE_TEMPLATE/config.yml): what a reviewable contribution contains.

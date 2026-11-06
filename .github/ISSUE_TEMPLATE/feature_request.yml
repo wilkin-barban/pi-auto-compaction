@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose new behavior or an improvement for pi-auto-compaction
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is hard or impossible today? Describe the workflow, not only the wanted command.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: The behavior you want, with examples of the commands or output you would expect.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches, workarounds, or reasons the current behavior is not enough.
+    validations:
+      required: false
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact and scope
+      description: Who benefits, what changes (runtime, docs, manifest, policies) and any compatibility or rollback concern.
+    validations:
+      required: true

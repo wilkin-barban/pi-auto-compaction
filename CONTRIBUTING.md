@@ -1,65 +1,96 @@
-# Guía de Contribución
+# Contributing to pi-auto-compaction
 
-Este documento establece las directrices de desarrollo, pruebas y mantenimiento de **pi-auto-compaction**.
+Thanks for helping. This repository is **public source-available** under `UNLICENSED`: the code can be read and audited, but all rights are reserved and nothing is published to npm. Reports, documentation, tests and patches are welcome.
 
-El repositorio es público como *source-available* bajo `UNLICENSED`: se aceptan reportes y parches por los canales habituales, pero no se publica en npm ni se otorga licencia de redistribución. Antes de abrir un issue con datos del entorno, eliminá credenciales, rutas personales y contenido de conversaciones.
-
----
-
-## 1. Disciplina de desarrollo: TDD Estricto
-
-Cualquier adición de comportamiento, corrección de errores o modificación de la lógica de distribución debe desarrollarse siguiendo la disciplina de **Desarrollo Guiado por Pruebas (TDD)** en cuatro fases obligatorias:
-
-1. **RED**: Escribir la prueba más pequeña a nivel de comportamiento que capture la necesidad o el defecto observado y registrar su fallo con anterioridad a la implementación.
-2. **GREEN**: Implementar la modificación mínima necesaria en el código de producción para que la prueba pase a verde.
-3. **TRIANGULATE**: Incorporar casos negativos, entradas inválidas y escenarios de borde pertinentes que protejan el contrato de la interfaz.
-4. **REFACTOR**: Mejorar la legibilidad, eliminar duplicación y consolidar estructuras asegurando que toda la suite permanezca en verde.
-
-Para cambios estrictamente documentales o alias de comandos sin alteración funcional, se documenta la justificación y se verifica la coherencia global sin necesidad de un ciclo RED artificial.
+- Languages: issues and pull requests in **English or Spanish**. Docs exist in both trees (`docs/en`, `docs/es`).
+- Start here: [README](README.md) · [Docs EN](docs/en/installation.md) · [Docs ES](docs/es/instalacion.md) · [Security](SECURITY.md) · [Code of Conduct](CODE_OF_CONDUCT.md)
+- Versión en español: [CONTRIBUTING.es.md](CONTRIBUTING.es.md)
 
 ---
 
-## 2. Aislamiento y Fixtures Offline
+## Quick path
 
-Todas las pruebas del repositorio deben ser completamente deterministas y autónomas:
+| Step | Command / action |
+|---|---|
+| 1 | Fork the repository and create a descriptive branch, e.g. `docs/contributor-guide` |
+| 2 | `npm ci --ignore-scripts` |
+| 3 | Make the change, with tests when behavior changes |
+| 4 | `npm test` — expected: `326` tests in `33` suites, `0` failures |
+| 5 | Update English **and** Spanish docs when the change is user-visible |
+| 6 | Open a pull request using the template |
 
-- **Sin credenciales de producción**: Las pruebas unitarias y de integración nunca deben leer archivos `auth.json` reales ni requerir claves de API del entorno.
-- **Sin llamadas de red ni proveedores activos**: Todas las llamadas a `ctx.modelRegistry.complete` se simulan mediante fixtures locales y dobles de prueba (mocks/stubs).
-- **Entornos temporales aislados**: Las pruebas que validan el comportamiento de `deploy.mjs`, `setup.mjs` y `rollback.mjs` deben crear directorios sintéticos temporales (mediante `fs.mkdtemp` o rutas en `node_modules/.tmp/`) y limpiar sus recursos al finalizar.
+External contributors open pull requests; only maintainers and repository agents push to `main`. No force-push, no orphan branches.
 
----
-
-## 3. Mantenimiento de la Fijación del SDK de Pi
-
-El paquete interactúa estrechamente con las interfaces internas del SDK de Pi. Para evitar incompatibilidades silenciosas:
-
-1. **Fijación exacta (Exact Pinning)**:
-   Las dos dependencias del SDK en `package.json` deben mantenerse fijadas en una versión exacta, sin rangos (`^` o `~`):
-   ```json
-   "devDependencies": {
-     "@earendil-works/pi-coding-agent": "0.87.1",
-     "@earendil-works/pi-ai": "0.87.1"
-   }
-   ```
-2. **Actualización coordinada**:
-   Al evaluar una nueva versión del SDK de Pi:
-   - Modifique ambas dependencias a la nueva versión idéntica.
-   - Ejecute `npm install --ignore-scripts` para regenerar `package-lock.json`.
-   - Inspeccione las definiciones de tipos o la documentación interna de Pi para validar que los hooks del ciclo de vida sigan presentes:
-     - `session_before_compact`
-     - `session_compact`
-     - `session_compact_failed`
-   - Verifique que la firma de `_getSummarizationRequestAuth` y la estructura de `CompactionResult` no hayan cambiado.
-   - Ejecute `npm test` y compruebe que la suite completa (referencia actual: 326 pruebas en 33 suites) apruebe al 100%.
+**Next step:** read [Development and tests](#development-and-tests), then open your PR.
 
 ---
 
-## 4. Convenciones de Código y Arquitectura
+## Development and tests
 
-- **Módulos estándar ECMAScript (ESM)**: Se utiliza `"type": "module"` en `package.json` y extensiones explícitas `.mjs`.
-- **Prohibición de parches en productos instalados**: Ninguna funcionalidad debe parchear binarios globales, paquetes en `node_modules` globales ni archivos gestionados por el harness Pi/herdr.
-- **Rutas y portabilidad**: No asumir rutas estáticas vinculadas a nombres de usuario locales; utilizar `os.homedir()` o las variables de entorno oficiales (`PI_CODING_AGENT_DIR`).
-- **Verificación obligatoria previa al commit**:
-  ```bash
-  npm test
-  ```
+- Node `>= 22.19` and Pi or gentle-shell available for manual checks.
+- Install exactly: `npm ci --ignore-scripts`.
+- Full suite: `npm test`. Focused run: `node --test --test-name-pattern="<name>" <file>`.
+- Discipline: RED (a failing test that captures the behavior), GREEN (minimal implementation), TRIANGULATE (edge cases the rule names), REFACTOR.
+- Tests are offline: **no credentials, no network, no real agent directory**. Use temporary fixtures and clean them up. `test/env-isolation.mjs` is a preload of `npm test` for exactly this reason.
+- CI runs Node 22, Node 24 and the Pi 1.5.0 compatibility smoke. A red CI never merges.
+
+## Code and architecture
+
+- ESM only (`.mjs`), small focused modules.
+- Never patch Pi, gentle-shell, herdr or `node_modules`. Integrate through hooks and public APIs.
+- Portable paths only: `$HOME`, `$PI_CODING_AGENT_DIR`, `$AGENT_DIR`, `$INSTALL_DIR`. No personal paths.
+- No credentials, `auth.json`, sessions, real telemetry or conversation content in the repository or in tests.
+
+## Documentation
+
+- English is the default; Spanish must be complete, not a summary. Update both trees in the same PR.
+- Relative links must resolve, counts must match reality (currently `326` tests in `33` suites), and nothing unverified may be stated as fact.
+- When behavior changes, update `README.md`, `README.es.md`, `docs/en/*`, `docs/es/*`, `CHANGELOG.md` and — when applicable — the evidence and ODD files.
+
+## Model or policy changes
+
+- Conversation policies live in `MANAGED_POLICIES` (`src/install-state.mjs`) and are covered by `test/integration/install-state.test.mjs`.
+- Any change there must keep manifest v2 and the v1→v2 migration correct, keep `doctor` accurate, and update both language docs.
+- Never change defaults, license or repository visibility without the owner's decision.
+
+## Commits and pull requests
+
+- [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `test:`, `chore:`.
+- Atomic commits: one reviewable unit per commit.
+- No `Co-Authored-By` trailers and no AI attribution.
+- The PR template asks for summary, related issue, type, tests, EN/ES docs, changelog, risk and rollback, plus a checklist.
+- Maintainers review, CI must be green, and the PR is squash-merged or merged. Never merge with secrets, red tests or stale docs.
+
+## Issues and security
+
+- Bug report: OS, Node version, Pi or gentle-shell version, extension version, reproduction steps, expected vs actual, and sanitized `doctor --json` output.
+- Feature request: the problem, the proposal, alternatives and the intended scope.
+- **Vulnerabilities:** do not open a public issue. Follow [SECURITY.md](SECURITY.md).
+- Code of Conduct reports go privately to the maintainer through the GitHub profile; retaliation is not tolerated.
+
+## Definition of done
+
+- Tests and CI green.
+- English and Spanish docs updated.
+- `CHANGELOG.md` entry when the change is user-visible.
+- No secrets and no personal paths.
+- Compatibility and rollback considered and stated.
+- PR reviewed and approved.
+
+## Contribution license
+
+- The repository is public source-available, `UNLICENSED` — **not** open source. No redistribution license is granted.
+- Contributions are accepted at the maintainer's discretion. By opening a pull request you confirm you have the right to submit the change and accept that it is distributed under the repository's current terms.
+- If you need another license or a CLA, contact the maintainer first. Never change the license yourself.
+
+## Good first contributions
+
+- Translations between English and Spanish.
+- Tests for uncovered branches and error messages.
+- Documentation fixes: broken links, stale counts, unclear steps.
+- `doctor` output improvements and clearer error messages.
+- Local-model support and provider documentation.
+
+Look for issues labeled `good first issue` when they exist.
+
+**Next step:** pick an issue or open one, branch, and run `npm test` before your first commit.

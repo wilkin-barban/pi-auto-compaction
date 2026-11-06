@@ -43,7 +43,11 @@ Este repositorio contiene la extensión pública source-available de compactaci�
 
 ---
 
-## 5. Skill de Automatización (skills/pi-auto-compaction/SKILL.md)
+## 5. Política de contribución
+
+Las contribuciones externas se rigen por `CONTRIBUTING.md` (inglés, default) y `CONTRIBUTING.es.md`: flujo fork/PR, TDD, CI obligatoria, documentación EN/ES y licencia de las contribuciones bajo `UNLICENSED`. El Código de Conducta está en `CODE_OF_CONDUCT.md` y `CODE_OF_CONDUCT.es.md`.
+
+## 6. Skill de Automatización (skills/pi-auto-compaction/SKILL.md)
 
 El repositorio incluye la skill `skills/pi-auto-compaction/SKILL.md` para asistentes y agentes de codificación. Su función es guiar las operaciones de:
 - **Instalación y despliegue**: Despliegue limpio, adopción de extensiones existentes (`--adopt-agent`) y simulación previa (`--dry-run`).

@@ -4,7 +4,18 @@ Todos los cambios notables en este proyecto serán documentados en este archivo.
 
 El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
-> **Nota de versión**: Este repositorio es privado. La mención de versiones describe hitos del código fuente y no implica la publicación formal de releases en GitHub Releases ni en registros públicos de paquetes.
+> **Nota de versión**: Este repositorio es público source-available bajo `UNLICENSED` y no se publica en npm. La mención de versiones describe hitos del código fuente y no implica la publicación formal de releases en GitHub Releases ni en registros públicos de paquetes.
+
+---
+
+## [Unreleased]
+
+### Documentación
+
+- `CONTRIBUTING.md` en inglés (default) y `CONTRIBUTING.es.md` completo: alcance source-available, ruta rápida fork/PR, desarrollo y tests offline, arquitectura, documentación bilingüe, cambios de políticas, commits y review, issues y seguridad, definición de terminado, licencia de las contribuciones y buenas primeras contribuciones.
+- `CODE_OF_CONDUCT.md` y `CODE_OF_CONDUCT.es.md` (Contributor Covenant 2.1 adaptado, reporte privado).
+- Plantillas de GitHub: `PULL_REQUEST_TEMPLATE.md`, `ISSUE_TEMPLATE/bug_report.yml`, `ISSUE_TEMPLATE/feature_request.yml` y `config.yml` con enlaces a docs, seguridad y discusiones.
+- Enlaces de contribución, conducta y seguridad actualizados en `README.md`, `README.es.md` y `AGENTS.md`.
 
 ---
 

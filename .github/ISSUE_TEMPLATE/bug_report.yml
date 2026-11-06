@@ -1,0 +1,61 @@
+name: Bug report
+description: Report a reproducible defect in pi-auto-compaction
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. `pi-auto-compaction` is public source-available under `UNLICENSED`.
+
+        **Security issues must not be reported here.** Follow [SECURITY.md](https://github.com/wilkinbarban/pi-auto-compaction/blob/main/SECURITY.md) instead.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node version, Pi or gentle-shell version, and extension version.
+      placeholder: |
+        OS: Ubuntu 24.04
+        Node: v22.19.0
+        Pi / gentle-shell: 1.5.0
+        pi-auto-compaction: 1.2.1
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: The smallest sequence that reproduces the defect, with exact commands.
+      placeholder: |
+        1. npm ci --ignore-scripts
+        2. node scripts/deploy.mjs --dry-run --agent-dir "$AGENT_DIR" --install-dir "$INSTALL_DIR"
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or doctor output
+      description: Paste `node scripts/doctor.mjs --json` or relevant logs with secrets and personal paths removed.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I removed tokens, credentials, `auth.json` content, session data and personal paths from this report.
+          required: true
