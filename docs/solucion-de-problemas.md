@@ -163,3 +163,130 @@ Para adoptar de forma segura un agente con una instalación previa válida hacia
      - **Compensación de fallos en adopción**: Posee guardas CAS exactas que restauran los bytes previos sin pisar modificaciones concurrentes ajenas; no obstante, no constituye recuperación atómica absoluta ante una caída total del proceso (`kill -9`).
      - **Reinstalación tras desinstalación de configuración**: Sigue sin estar implementada si se ejecutó `rollback.mjs`.
    - **Recarga de sesiones obligatoria**: Ejecute `/reload` en las sesiones activas de Pi para cargar el nuevo release.
+
+---
+
+## 6. El comando `/compaction` no aparece o no es reconocido
+
+### Síntoma
+Al escribir `/compaction` dentro de una sesión de Pi, la consola indica que el comando no existe o no aparece en la paleta de autocompletado de comandos.
+
+### Causa raíz
+Pi inicializa y registra los comandos de las extensiones al arrancar la sesión o al invocar `/reload`. Si se instaló o actualizó la extensión mientras Pi ya estaba en ejecución, el nuevo comando no estará disponible en memoria hasta recargar.
+
+### Solución
+1. En la sesión activa de Pi, ejecutá:
+   ```text
+   /reload
+   ```
+2. Tras la recarga, escribí `/compaction` en la línea de entrada; el comando aparecerá con la descripción `"Configurar el modelo primario y de respaldo de la autocompactación"`.
+
+---
+
+## 7. Sin modelos de chat disponibles al ejecutar `/compaction`
+
+### Síntoma
+Al ejecutar `/compaction`, aparece la notificación de error:
+`"No hay modelos de chat disponibles con credenciales configuradas."`
+y el comando finaliza sin abrir el selector.
+
+### Causa raíz
+El resolvedor de modelos (`listChatModels`) consulta dinámicamente `ctx.modelRegistry` buscando modelos de tipo `"chat"` que tengan credenciales configuradas (`hasConfiguredAuth`). Si no hay proveedores autenticados en `auth.json` o si ningún modelo de chat supera el filtro de autenticación, la lista resulta vacía.
+
+### Solución
+1. Verificá que tus credenciales de modelos de chat estén configuradas en `$HOME/.pi/agent/auth.json` o ejecutá el comando `/login` dentro de Pi para autenticar tus proveedores habituales.
+2. Comprobá que al menos un proveedor (por ejemplo OmniRoute, OpenAI, Anthropic, Gemini o proveedores locales compatibles) disponga de credenciales válidas y modelos de chat accesibles.
+3. Volvé a ejecutar `/compaction` una vez confirmadas las credenciales.
+
+---
+
+## 8. Modelo de resumen configurado no encontrado en tiempo de ejecución
+
+### Síntoma
+Durante el inicio de sesión o al dispararse una compactación, `doctor` o la consola advierten que el modelo primario o de respaldo configurado en `.pi-auto-compaction-settings.json` no se encuentra en el registro de modelos.
+
+### Causa raíz
+El modelo fue guardado previamente en el archivo de settings, pero posteriormente se desconfiguró el proveedor, se revocaron las credenciales en `auth.json`, o el modelo fue retirado de `models.json`.
+
+### Comportamiento del sistema
+- Si el modelo primario no está disponible, la extensión intenta automáticamente el modelo de respaldo.
+- Si el modelo de respaldo tampoco está disponible o falla, la extensión retorna `undefined` para que Pi active su compactación nativa, garantizando que la conversación no se interrumpa.
+
+### Solución
+1. Ejecutá `/compaction` para seleccionar un modelo activo y disponible en el harness.
+2. Si deseás restaurar los modelos originales de OmniRoute, eliminá el archivo `.pi-auto-compaction-settings.json` o reconfigurá las credenciales del proveedor ausente en `auth.json`.
+
+---
+
+## 9. Archivo de configuración corrupto o con versión inválida
+
+### Síntoma
+Al iniciar Pi o al ejecutar `npm run doctor`, aparece una advertencia como:
+`"Failed to load summarizer settings from ...: Invalid JSON in summarizer settings: ..."` o `"Invalid settings version: expected 1, got ..."`
+
+### Causa raíz
+El archivo `.pi-auto-compaction-settings.json` fue editado manualmente introduciendo errores de sintaxis JSON, campos no reconocidos, tipos de datos inválidos (como `null` o números donde se esperan strings) o una versión distinta de `1`.
+
+### Comportamiento de protección
+Por seguridad de los datos del usuario, **la extensión nunca sobrescribe ni borra un archivo corrupto automáticamente**. En su lugar:
+- Emite una advertencia diagnóstica visible en `doctor` y en las notificaciones de Pi.
+- Carga de forma segura los modelos predeterminados inmutables (`DEFAULT_EFFECTIVE_SUMMARIZER`).
+
+### Solución
+1. Podés corregir la sintaxis JSON del archivo directamente respetando el esquema estricto (campos `version: 1`, `primary: { provider, modelId }`, `fallback: { provider, modelId }`).
+2. O bien, ejecutá `/compaction` dentro de Pi y completá la selección: al confirmar, se escribirá un nuevo archivo atómico válido.
+3. Si preferís restablecer a los valores predeterminados limpios, simplemente borrá el archivo:
+   ```bash
+   rm "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/.pi-auto-compaction-settings.json"
+   ```
+
+---
+
+## 10. Advertencia por ventana de contexto reducida (`< 32.000` tokens)
+
+### Síntoma
+Al seleccionar un modelo en `/compaction` o en el reporte de `doctor`, aparece la advertencia:
+`"Atención: <provider>/<modelId> tiene ventana de contexto chica (< 32.000 tokens); las sesiones largas van a caer al respaldo o a la compactación nativa."`
+
+### Causa raíz
+El modelo seleccionado declara una ventana de contexto (`contextWindow`) inferior a 32.000 tokens (común en modelos locales pequeños de 8k o 16k).
+
+### Impacto operativo
+La compactación debe enviar los turnos históricos de la conversación dentro de un solo prompt. Si la sesión activa acumula una cantidad de tokens que excede la ventana del resumidor, el intento fallará inmediatamente por límite de capacidad y el sistema intentará el modelo de respaldo o la compactación nativa de Pi.
+
+### Recomendación
+- Para sesiones de desarrollo complejas o prolongadas, elegí modelos primarios con ventanas amplias (por ejemplo, 128k, 400k o 1.000.000 de tokens).
+- Si deseás utilizar un modelo con ventana reducida como primario, asegurate de que el modelo de respaldo cuente con una ventana suficientemente grande como red de protección.
+
+---
+
+## 11. El modelo de respaldo es idéntico al primario
+
+### Síntoma
+Al completar la selección en `/compaction`, el panel muestra la advertencia:
+`"El respaldo debe ser un modelo distinto del primario: aporta resiliencia cuando el primario falla. No se guardó nada."`
+y la configuración previa se mantiene intacta.
+
+### Causa raíz
+Se seleccionó exactamente el mismo `provider/modelId` para el rol primario y para el rol de respaldo.
+
+### Justificación de diseño
+El propósito arquitectónico del modelo de respaldo es ofrecer tolerancia a fallos cuando el primario experimenta caídas de red, saturación, errores de cuota o límites de contexto. Asignar el mismo modelo anula la redundancia y duplicaría las llamadas fallidas al mismo endpoint.
+
+### Solución
+Volvé a ejecutar `/compaction` y asegurate de elegir un modelo de respaldo distinto (por ejemplo, un modelo más liviano del mismo proveedor o un proveedor alternativo de respaldo).
+
+---
+
+## 12. Modelo local lento o timeout por rendimiento
+
+### Síntoma
+Al emplear un modelo local (como Ollama) como resumidor primario, la compactación se demora 60 segundos y se cancela con error de timeout, pasando al modelo de respaldo o a la compactación nativa.
+
+### Causa raíz
+La extensión aplica un límite estricto de **60 segundos por intento** para evitar que la interfaz de Pi permanezca congelada indefinidamente. Si el modelo local se ejecuta en una máquina sin aceleración suficiente por GPU o si el contexto histórico es grande, el procesamiento puede superar los 60 segundos permitidos.
+
+### Solución
+1. **Modelos más livianos**: Utilizá versiones cuantizadas más ligeras (por ejemplo `qwen2.5-coder:7b` en lugar de versiones de `14b` o `32b`).
+2. **Inversión de roles**: Configurá un modelo rápido en la nube (como `antigravity/gemini-3.8-flash-tiered` o `openai/gpt-4o-mini`) como primario y dejá el modelo local como respaldo (o viceversa según tu preferencia de costos).
+3. **Optimización de inferencia local**: Verificá que Ollama tenga habilitada la descarga completa de capas en GPU (`num_gpu`) para reducir los tiempos de generación.

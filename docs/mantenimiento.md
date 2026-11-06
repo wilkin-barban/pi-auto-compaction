@@ -169,3 +169,48 @@ Durante cualquier operación de despliegue o desinstalación, el sistema registr
 - **Fijación de versiones (Pinning)**: Las dependencias `@earendil-works/pi-coding-agent` y `@earendil-works/pi-ai` están fijadas con versión exacta `0.87.1` en `package.json`. No se utilizan comodines de rango (`^` o `~`).
 - **Compatibilidad con Pi 1.5.0**: El job de CI `compat-pi-1-5` instala `@earendil-works/pi-coding-agent@1.5.0` y ejecuta `scripts/compat/pi-1.5.0-smoke.mjs` (versión, defaults 16384/20000, exports, serialización y hooks). El pin de desarrollo `0.87.1` se mantiene para no alterar el lockfile.
 - **Verificación previa a la actualización del SDK**: Si se planea actualizar el paquete global de Pi en el sistema, clone primero los cambios en este repositorio, actualice el pin local, ejecute `npm test` y compruebe que los hooks del ciclo de vida (`session_before_compact`, `session_compact`, `session_compact_failed`) sigan manteniendo el mismo contrato antes de desplegar en producción.
+
+---
+
+## 6. Mantenimiento y persistencia de `.pi-auto-compaction-settings.json`
+
+El archivo `.pi-auto-compaction-settings.json` almacena las preferencias de los modelos de autocompactación elegidos por el usuario (mediante `/compaction` o edición directa).
+
+### Supervivencia frente a actualizaciones (`--update`) y rollbacks (`--rollback-source`)
+
+- **Persistencia garantizada**: El archivo de settings reside en `$AGENT_DIR/.pi-auto-compaction-settings.json` (o `$HOME/.pi/agent/.pi-auto-compaction-settings.json`), de forma totalmente independiente del árbol de releases gestionados bajo `$INSTALL_DIR/releases/`.
+- **Inalterado durante actualizaciones**: Las operaciones de actualización (`deploy.mjs --update`) y de reversión de código (`deploy.mjs --rollback-source`) únicamente gestionan los directorios inmutables de release y el loader `omniroute-compaction.ts`. **El archivo `.pi-auto-compaction-settings.json` sobrevive intacto a cualquier actualización de versión**. Tus modelos primario y de respaldo seleccionados se mantienen activos sin necesidad de reconfigurarlos tras actualizar.
+
+### Respaldo de la configuración (Backup)
+
+Para respaldar tu configuración de resumidores, copiá el archivo conservando los permisos restrictivos de lectura y escritura (`0600`):
+
+```bash
+SETTINGS_FILE="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/.pi-auto-compaction-settings.json"
+if [ -f "$SETTINGS_FILE" ]; then
+  cp -p "$SETTINGS_FILE" "$SETTINGS_FILE.bak"
+  chmod 0600 "$SETTINGS_FILE.bak"
+fi
+```
+
+### Restablecimiento a valores por defecto (Reset)
+
+Si deseás descartar la configuración personalizada y restablecer los modelos de resumen a los valores predeterminados (`omniroute/antigravity/gemini-3.8-flash-tiered` y `gemini-3.6-flash-high`), basta con eliminar el archivo de settings:
+
+```bash
+rm "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/.pi-auto-compaction-settings.json"
+```
+
+- La eliminación es limpia y segura: la ausencia del archivo no se considera un error ni una advertencia.
+- En el próximo ciclo de compactación, la extensión detectará la ausencia del archivo y utilizará de forma automática los modelos por defecto.
+- También podés reconfigurar los modelos en caliente en cualquier momento ejecutando `/compaction` dentro de Pi.
+
+### Diagnóstico con `doctor`
+
+Para verificar el estado actual del archivo de configuración, ejecutá el comando de diagnóstico:
+
+```bash
+npm run doctor -- --agent-dir "$AGENT_DIR" --install-dir "$INSTALL_DIR"
+```
+
+`doctor` muestra la ruta del archivo, el origen y los modelos efectivos. Si el archivo no existe, reportará origen predeterminado (`default`); si existe y es válido, reportará origen de archivo (`file`); y si el archivo contiene JSON mal formado o un esquema inválido, emitirá una advertencia diagnóstica clara sin bloquear la ejecución.

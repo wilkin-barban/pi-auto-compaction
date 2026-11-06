@@ -50,6 +50,9 @@ Para garantizar que las sesiones de Pi no queden corruptas durante actualizacion
    - Ruta por defecto: `$HOME/.pi/agent/.pi-auto-compaction-manifest.json`.
    - Registra el estado base previo de los **ocho modelos gestionados** en el campo `originalOverrides` (línea base original preservada de forma inmutable estrictamente para desinstalación, no para restaurar mientras la extensión esté instalada) y las **políticas por modelo** en `policies` (manifiesto v2) para la detección de drift. Los manifiestos v1 de cuatro modelos se migran a v2 preservando `originalOverrides`.
    - Registra el hash del loader (`loaderHash`) y coordina el journal transaccional temporal del agente en `$HOME/.pi/agent/.pi-auto-compaction-state/recovery-journal.json`.
+5. **Configuración de modelos de compactación (Summarizer Settings)**:
+   - Ruta por defecto: `$HOME/.pi/agent/.pi-auto-compaction-settings.json` (o `$AGENT_DIR/.pi-auto-compaction-settings.json`).
+   - Archivo opcional e independiente que almacena las preferencias de modelos elegidos para la autocompactación. Es completamente independiente de `settings.json`, nunca lo modifica y no requiere intervención manual. Si no existe, la extensión opera con los modelos predeterminados.
 
 ---
 
@@ -119,11 +122,11 @@ Ejecutá el diagnóstico de solo lectura antes de recargar:
 npm run doctor -- --agent-dir "$AGENT_DIR" --install-dir "$INSTALL_DIR"
 ```
 
-Debe reportar `healthy`, exit `0`, y el umbral efectivo de cada modelo. Si aparece una advertencia con `DeepSeek 860000 → 14%`, el override viejo sigue presente y el deploy no aplicó la política nueva.
+Debe reportar `healthy`, exit `0`, y el umbral efectivo de cada modelo. `doctor` muestra la ruta del archivo, el origen y los modelos efectivos del resumidor. Si aparece una advertencia con `DeepSeek 860000 → 14%`, el override viejo sigue presente y el deploy no aplicó la política nueva.
 
 ### Paso 5: Recargar Pi
 
-Para que Pi detecte la nueva extensión sin reiniciar todo el entorno:
+Para que Pi detecte la nueva extensión y sus comandos sin reiniciar todo el entorno:
 
 - Si tiene una sesión activa de Pi, ejecute el comando interno:
   ```text
@@ -133,6 +136,20 @@ Para que Pi detecte la nueva extensión sin reiniciar todo el entorno:
   ```bash
   pi
   ```
+
+### Paso 6: Configurar el modelo de compactación (`/compaction`)
+
+Una vez recargada la sesión, ejecutá el comando interactivo:
+
+```text
+/compaction
+```
+
+Este comando abre el panel para elegir el modelo primario y el modelo de respaldo de la autocompactación a partir de los modelos de chat autorizados en el harness.
+
+- **Archivo de configuración separado y opcional**: La selección se guarda en `$AGENT_DIR/.pi-auto-compaction-settings.json` (o `$HOME/.pi/agent/.pi-auto-compaction-settings.json`, configurable mediante `PI_AUTO_COMPACTION_SETTINGS_PATH`). Este archivo es **completamente opcional e independiente de `settings.json`**. La extensión nunca escribe ni modifica `settings.json` al configurar o guardar resumidores.
+- **Valores por defecto**: Si el archivo de configuración no existe, la extensión opera normalmente con los modelos por defecto sin advertencias ni interrupciones.
+- **Diagnóstico con `doctor`**: Podés verificar en cualquier momento el estado de la configuración ejecutando `npm run doctor`, el cual muestra la ruta del archivo, el origen y los modelos efectivos.
 
 ---
 

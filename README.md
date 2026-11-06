@@ -72,6 +72,94 @@ O inicia una nueva terminal/sesión de Pi para activar la extensión.
 
 ---
 
+## Configurar el modelo de compactación
+
+A partir de la versión 1.2.0, podés configurar interactivamente qué modelos asumen la compactación automática sin reiniciar Pi ni alterar tu modelo de conversación.
+
+### Comando interactivo `/compaction`
+
+Ejecutá dentro de una sesión activa de Pi:
+
+```text
+/compaction
+```
+
+El panel interactivo te guía en dos pasos:
+
+1. **Selección del modelo primario**: Muestra todos los modelos de chat disponibles en el harness con credenciales configuradas, ordenados alfabéticamente por `provider/id`, indicando con `✓` el modelo seleccionado actualmente.
+2. **Selección del modelo de respaldo (fallback)**: Permite elegir un modelo alternativo para tolerar fallos del primario. Debe ser distinto del primario.
+
+Cada opción muestra la información clave del modelo:
+```text
+provider/id · Nombre descriptivo · ctx <ventana_tokens> · max <max_tokens>
+```
+
+#### Reglas de validación y límites en el panel:
+- **Modelos dinámicos del harness**: La lista no está hard-codeada; se consulta en tiempo real desde el registro de modelos de Pi (`ctx.modelRegistry`). Si un modelo no tiene credenciales válidas en `auth.json`, no aparece en la lista.
+- **Respaldo distinto**: El modelo de respaldo debe ser diferente del primario; si se elige el mismo, el panel avisa y rechaza guardar para garantizar redundancia efectiva.
+- **Advertencia por ventana de contexto reducida**: Si algún modelo seleccionado tiene una ventana de contexto inferior a **32.000 tokens** (`< 32.000`), el panel emite una advertencia (`warning`): en sesiones extensas el prompt de compactación podría exceder dicha ventana y requerir la caída al respaldo o al fallback nativo.
+- **Confirmación y aplicación en caliente**: Antes de escribir, se solicita confirmación explícita. Al confirmar, los cambios se aplican **en caliente en memoria** (`runtimeConfig`) para la siguiente compactación sin requerir `/reload`, y se actualiza el indicador en la barra de estado inferior (`pi-auto-compaction-model`).
+
+### Archivo de configuración independiente
+
+La selección se persiste en un archivo JSON propio, aislado y seguro:
+
+- **Ruta estándar**: `$PI_CODING_AGENT_DIR/.pi-auto-compaction-settings.json` (por defecto `$HOME/.pi/agent/.pi-auto-compaction-settings.json`).
+- **Override de ruta**: Variable de entorno `PI_AUTO_COMPACTION_SETTINGS_PATH`.
+- **Permisos estrictos**: Archivo creado con permisos `0600` (lectura/escritura exclusiva del usuario) y directorio padre con `0700`.
+- **Escritura atómica**: Utiliza un archivo temporal y renombramiento atómico (`renameSync`). Si el destino es un enlace simbólico (symlink), la escritura es rechazada inmediatamente.
+- **Aislamiento total de `settings.json`**: **Nunca escribe ni modifica `settings.json`**. Si el archivo `.pi-auto-compaction-settings.json` no existe, se emplean los valores predeterminados sin emitir advertencias. Si está corrupto o mal formado, se cargan los defaults seguros con una advertencia visible en `doctor`, sin sobrescribir el archivo dañado.
+
+**Esquema JSON**:
+
+```json
+{
+  "version": 1,
+  "primary": {
+    "provider": "antigravity",
+    "modelId": "gemini-3.8-flash-tiered"
+  },
+  "fallback": {
+    "provider": "antigravity",
+    "modelId": "gemini-3.6-flash-high"
+  }
+}
+```
+
+### Ejemplos de emparejamiento de modelos
+
+Podés configurar cualquier combinación de modelos de chat autorizados en tu instalación de Pi:
+
+- **Antigravity directo**:
+  - Primario: `antigravity/gemini-3.8-flash-tiered`
+  - Respaldo: `antigravity/gemini-3.6-flash-high`
+- **OpenAI / Codex**:
+  - Primario: `openai/gpt-4o` (o `openai-codex/gpt-5.2-preview`)
+  - Respaldo: `openai/gpt-4o-mini`
+- **Command Code**:
+  - Primario: `commandcode/deepseek/deepseek-v4.1-flash`
+  - Respaldo: `commandcode/deepseek/deepseek-v3.1-lite`
+- **Ollama local**:
+  - Primario: `ollama/qwen2.5-coder:14b`
+  - Respaldo: `ollama/llama3.2:3b`
+
+### Semántica de fallback
+
+El ciclo de autocompactación opera con una jerarquía de tolerancia a fallos:
+
+1. **Intento primario**: Ejecuta el resumen con el modelo primario (límite: 60 segundos).
+2. **Intento de respaldo**: Si el primario falla por timeout, saturación, error de tasa o contenido rechazado, se invoca de inmediato el modelo de respaldo (dentro del presupuesto acumulado de 120 segundos).
+3. **Respaldo nativo de Pi**: Si el respaldo también falla o el tiempo total se agota, la extensión retorna `undefined` para que Pi ejecute su compactación nativa habitual con el modelo de conversación activo.
+
+### Privacidad y relación con `skipProviders`
+
+La configuración del modelo de compactación y la lista de omisión de proveedores (`PI_AUTO_COMPACTION_SKIP_PROVIDERS`) son ortogonales e independientes:
+
+- Si el modelo de conversación activo pertenece a un proveedor listado en `PI_AUTO_COMPACTION_SKIP_PROVIDERS`, la extensión **no interviene** y cede el control a la compactación nativa de Pi, independientemente de los modelos configurados en `/compaction`.
+- Si el proveedor no está en `skipProviders`, el resumen se delega a los modelos configurados en `.pi-auto-compaction-settings.json`.
+
+---
+
 ## Documentación detallada
 
 La documentación técnica completa está organizada en guías modulares:

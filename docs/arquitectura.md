@@ -81,12 +81,15 @@ La extensión utiliza la API `ctx.modelRegistry.complete` para despachar la tare
 
 ### Modelos configurados
 
-- **Modelo principal (Primary)**:
+Por defecto, la extensión utiliza los siguientes identificadores:
+- **Modelo principal por defecto (Primary)**:
   `omniroute/antigravity/gemini-3.8-flash-tiered`
-- **Modelo de respaldo (Fallback)**:
+- **Modelo de respaldo por defecto (Fallback)**:
   `omniroute/antigravity/gemini-3.6-flash-high`
 
-Ambos identificadores se configuran con parámetros de esfuerzo de razonamiento bajo (`reasoningEffort: "low"` y `reasoning: "low"`), **aplicados condicionalmente únicamente si el modelo cuenta con soporte de razonamiento (`model.reasoning` es verdadero)**; no se adjunta de forma incondicional a modelos que no lo soportan. Esto optimiza la velocidad de respuesta y el costo de generación del resumen.
+A partir de la versión 1.2.0, estos modelos son totalmente configurables por el usuario (mediante el comando `/compaction`, variables de entorno o archivo de configuración).
+
+Cualquiera sea el modelo utilizado, si cuenta con soporte de razonamiento (`model.reasoning` es verdadero), se aplican condicionalmente parámetros de esfuerzo bajo (`reasoningEffort: "low"` y `reasoning: "low"`); no se adjuntan a modelos que no lo soportan. Esto optimiza la velocidad de respuesta y el costo de generación del resumen.
 
 ### Presupuesto de tiempo y cancelación
 
@@ -165,3 +168,55 @@ La extensión mantiene un registro de auditoría local para diagnosticar el comp
 - **Privacidad estricta**: No se almacenan transcripciones de mensajes, contenido de sesiones, claves de API, rutas personales de usuario ni `tokensAfter`. Únicamente se persisten los seis metadatos autorizados junto a las métricas del ciclo.
 - **Datos no registrados**: Se excluyen estrictamente las transcripciones completas de los mensajes, claves de API, variables de entorno y rutas completas del sistema de archivos.
 - **Claridad sobre transmisión de datos**: Para que los resumidores de OmniRoute puedan generar el resumen del contexto anterior, **el texto de los turnos antiguos de la conversación se transmite deliberadamente a la API de OmniRoute**. El cifrado en tránsito depende del protocolo del endpoint configurado (se recomienda enfáticamente HTTPS; la extensión no impone TLS a nivel de transporte). No debe afirmarse que ningún contenido conversacional abandona la máquina; lo que se garantiza es que la telemetría local persistida en disco no almacena transcripciones ni secretos.
+
+---
+
+## 7. Configuración del resumidor, precedencia y comando `/compaction`
+
+La versión 1.2.0 introduce la capacidad de seleccionar y alternar los modelos de autocompactación de manera desacoplada.
+
+### Cadena de precedencia de configuración
+
+La resolución de los modelos activo y de respaldo sigue una cadena estricta de cuatro niveles:
+
+$$\text{options} \succ \text{env} \succ \text{file} \succ \text{default}$$
+
+1. **`options` (Prioridad máxima)**: Opciones pasadas explícitamente en código (`primaryModel`/`primary`, `fallbackModel`/`fallback`).
+2. **`env`**: Variables de entorno para entornos automatizados o headless:
+   - `PI_AUTO_COMPACTION_PRIMARY_PROVIDER` y `PI_AUTO_COMPACTION_PRIMARY_MODEL`.
+   - `PI_AUTO_COMPACTION_FALLBACK_PROVIDER` y `PI_AUTO_COMPACTION_FALLBACK_MODEL`.
+   *Regla de pares*: Un par incompleto (por ejemplo, definir el proveedor sin el modelo) se descarta con advertencia y no sobreescribe la capa inferior.
+3. **`file`**: Archivo de persistencia de usuario `$AGENT_DIR/.pi-auto-compaction-settings.json` (o `$HOME/.pi/agent/...`, con override en `PI_AUTO_COMPACTION_SETTINGS_PATH`). Si el archivo no existe, no genera advertencia y cede el paso a los defaults. Si contiene JSON corrupto o esquema inválido, emite advertencia diagnóstica y no lo sobrescribe.
+4. **`default` (Línea base)**: Los modelos predeterminados inmutables (`DEFAULT_EFFECTIVE_SUMMARIZER` / `DEFAULT_CONFIG`): `omniroute/antigravity/gemini-3.8-flash-tiered` como primario y `omniroute/antigravity/gemini-3.6-flash-high` como respaldo.
+
+**Pureza arquitectónica**: `resolveConfig` se mantiene estrictamente como una función pura sin efectos secundarios ni operaciones de sistema de archivos. La función `resolveActiveConfig` es el único punto del sistema que lee el disco y genera el descriptor inmutable `summarizer` con `path`, `source` (por ejemplo `"file"`, `"env"`, `"default"` o fuentes combinadas como `"env+file"`), `sources` y `warnings`.
+
+### Descubrimiento dinámico de modelos de chat
+
+La lista de modelos seleccionables no se basa en un catálogo hard-codeado ni estático. En su lugar, consulta directamente el registro del harness de Pi (`ctx.modelRegistry`):
+
+1. Invoca `ctx.modelRegistry.getAvailableOfType("chat")`.
+2. Si la lista está vacía o el método no está disponible, consulta `ctx.modelRegistry.getModelsOfType("chat")` filtrando aquellos donde `ctx.modelRegistry.hasConfiguredAuth(model)` es verdadero.
+3. Se descartan modelos sin proveedor o id válidos y se ordenan alfabéticamente por `provider/id`.
+
+De esta forma, cualquier modelo que el usuario tenga configurado y autenticado en Pi (Antigravity, OpenAI, Command Code, Gemini, modelos locales en Ollama, etc.) queda inmediatamente disponible para resumir.
+
+### Indicador de estado en UI y footer (`pi-auto-compaction-model`)
+
+Para visibilidad operativa continua, la extensión registra una entrada en la barra de estado de Pi:
+
+- **Clave de estado**: `pi-auto-compaction-model`.
+- **Formato del texto**: `Compaction: <provider>/<modelId>` (reflejando el modelo primario activo).
+- **Ciclo de vida**: Se publica en el evento `session_start` y se actualiza inmediatamente cuando el usuario guarda una nueva selección en `/compaction`.
+- **Aislamiento**: La publicación es puramente cosmética. Cualquier rechazo o fallo en `ui.setStatus` es capturado silenciosamente para no interrumpir jamás el ciclo de compactación ni el trabajo del agente.
+
+### Decisión de diseño: Por qué `/compaction` y no la página Extensions de Pi
+
+Se evaluó la posibilidad de integrar la configuración dentro de la página nativa de extensiones de Pi (`/settings` → Extensions) o dentro del menú `/gentle:customize` de gentle-shell. Dicha alternativa fue descartada por los siguientes límites de API de Pi 1.5.0 y gentle-pi 4.6.0:
+
+1. **Ausencia de API de configuración en `ExtensionAPI`**: El SDK de Pi expone `registerCommand`, `registerShortcut`, `ctx.ui.*`, `setStatus` y `setWidget`. No existe `registerSettings` ni ningún hook para registrar páginas o paneles interactivos personalizados dentro de la configuración central.
+2. **Limitación de `ConfigSelectorComponent`**: La interfaz de `/settings` → Extensions utiliza internamente `ConfigSelectorComponent`, diseñado exclusivamente para activar o desactivar extensiones completas (interruptores on/off), sin soporte para campos, formularios o selectores arbitrarios.
+3. **Estructura estática de `/gentle:customize`**: En gentle-shell, las categorías de personalización están codificadas de forma fija en `gentle-shell.ts`, sin permitir que extensiones de terceros registren elementos propios.
+4. **Respeto a la política de No-Parches**: Intentar inyectar la configuración en esas páginas requeriría parches invasivos sobre `node_modules` o sobre binarios instalados globalmente, violando las directrices de integridad del repositorio.
+
+Por consiguiente, la implementación de un comando interactivo propio (`/compaction`), combinado con el indicador en el footer (`pi-auto-compaction-model`) y persistencia atómica en `.pi-auto-compaction-settings.json`, ofrece una experiencia de usuario ergonómica, limpia y 100% compatible con las APIs oficiales del SDK.
