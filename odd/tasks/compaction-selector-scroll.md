@@ -24,7 +24,7 @@ Decisión: `ctx.ui.custom` con `SelectList` + `Input` + `fuzzyFilter` de `@earen
 - T2 — S2 integración en `/compaction` + tests. Inline. Commit propio. **Hecho**: `f843bf2`.
 - T3 — S3 completar tests de render/preselección/fallback. Inline. Commit propio. **Hecho**: incluido en `331c74c` y `f843bf2`.
 - T4 — S4 docs, CHANGELOG 1.2.1, bump y evidencia. Inline. Commit propio. **Hecho**: docs/release en el commit de cierre; writer cancelado a los ~10,5 min con los archivos ya escritos, diff revisado y completado inline.
-- T5 — S5 suite, smoke, push, CI y deploy live. Inline. Cierre.
+- T5 — S5 suite, smoke, push, CI y deploy live. Inline. Cierre. **Hecho**: suite 326/326 en 33 suites, smoke 5/5, CI `42246823581` y `42247608269`, release `2655760e…`, marker `ready`, settings intacto, `/reload` pendiente.
 
 ## Criterios de aceptación
 

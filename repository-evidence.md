@@ -499,6 +499,11 @@ Disciplina TDD: T1 y T2 observaron RED antes de GREEN. T3 observó RED por un fi
 | Selector de modelos | `node --test test/unit/model-selector.test.mjs` | 17/17: exports de primitivas de TUI, filtro incremental determinista, formateo de items y labels descriptivos, cálculo de `maxVisible` según filas de terminal, render acotado de 100+ modelos con scroll info, búsqueda en vivo y `"Sin coincidencias"`, preselección por valor actual, navegación por flechas, cancelación por Escape, aplicación de temas y fallback de host |
 | Integración en `/compaction` | `node --test test/unit/compaction-command.test.mjs` | 17/17: selector interactivo en TUI con preselección de primario y respaldo, guardado con selector custom, fallback a `ui.select` en entornos sin UI personalizada y validaciones completas |
 
+| Despliegue live | `node scripts/deploy.mjs --update` | Dry-run OK y real OK; release `2655760ee36d25e49354e51e13165197338c2c3ac821f24b9d1848cde0649719`; marker `ready`; loader apuntando a ese release; 0 locks; journals solo `committed`; `doctor` HEALTHY exit 0 |
+| Resolución desde el release desplegado | `loadPiTUI()` importado del release | `SelectList` disponible y picker de 120 modelos renderizando 14 líneas con contador de scroll |
+| Archivo de settings intacto | `sha256sum` antes/después del deploy | `7a5dae70…` idéntico (sigue `commandcode/claude-haiku-5-5` / `commandcode/claude-sonnet-5-5`) |
+| CI | run `42246823581` y `42247608269` | Verdes en Node 22, Node 24 y Pi 1.5.0 smoke |
+
 ### Commits de la tanda
 
 - `07af316`: `test: isolate suites from the real agent settings` (aislamiento de suites frente a configuraciones reales del desarrollador en `$HOME/.pi/agent` mediante `test/env-isolation.mjs`).
