@@ -725,3 +725,339 @@ test("compensation preserves equivalent ISO timestamp format foreign manifest mu
   assert.ok(fs.readdirSync(path.join(f.installDir, "journals")).length >= 1);
 });
 
+test("successful setup return status 0 preserves foreign unknown manifest field, byte-identical and retains pending journal", (t) => {
+  const f = fixture(t);
+  const oldSource = setupOccupiedAgent(f);
+  const beforeBytes = agentBytes(f);
+  let foreignManifestBytes;
+
+  const run = (node, args, options) => {
+    if (args[0].endsWith("setup.mjs")) {
+      const res = spawnSync(node, args, options);
+      if (res.status !== 0) return res;
+      const manifestPath = path.join(f.agentDir, manifestName);
+      const m = read(manifestPath);
+      m.unauthorizedField = "foreign-unknown-manifest-value";
+      write(manifestPath, m);
+      foreignManifestBytes = fs.readFileSync(manifestPath, "utf8");
+      return res;
+    }
+    return spawnSync(node, args, options);
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { run }),
+    /schema|unknown|corrupt|reconcil/i,
+  );
+
+  assert.equal(fs.readFileSync(path.join(f.agentDir, manifestName), "utf8"), foreignManifestBytes);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "settings.json"), "utf8"), beforeBytes[0]);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "extensions", "omniroute-compaction.ts"), "utf8"), beforeBytes[2]);
+  assert.equal(marker(f).state, "pending");
+  assert.ok(fs.readdirSync(path.join(f.installDir, "journals")).length >= 1);
+});
+
+test("successful setup return status 0 preserves foreign valid baseline mutation, byte-identical and retains pending journal", (t) => {
+  const f = fixture(t);
+  const oldSource = setupOccupiedAgent(f);
+  const beforeBytes = agentBytes(f);
+  let foreignManifestBytes;
+
+  const run = (node, args, options) => {
+    if (args[0].endsWith("setup.mjs")) {
+      const res = spawnSync(node, args, options);
+      if (res.status !== 0) return res;
+      const manifestPath = path.join(f.agentDir, manifestName);
+      const m = read(manifestPath);
+      m.originalOverrides["openai/gpt-6-sol"].reserveTokens.value = 999999;
+      write(manifestPath, m);
+      foreignManifestBytes = fs.readFileSync(manifestPath, "utf8");
+      return res;
+    }
+    return spawnSync(node, args, options);
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { run }),
+    /baseline|drift|reconcil|changed/i,
+  );
+
+  assert.equal(fs.readFileSync(path.join(f.agentDir, manifestName), "utf8"), foreignManifestBytes);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "settings.json"), "utf8"), beforeBytes[0]);
+  assert.equal(fs.readFileSync(path.join(f.agentDir, "extensions", "omniroute-compaction.ts"), "utf8"), beforeBytes[2]);
+  assert.equal(marker(f).state, "pending");
+  assert.ok(fs.readdirSync(path.join(f.installDir, "journals")).length >= 1);
+});
+
+test("postcommit equivalent ISO timestamp manifest mutation fails closed, preserves foreign manifest and retains pending journal", (t) => {
+  const f = fixture(t);
+  setupOccupiedAgent(f);
+  let foreignManifestBytes;
+
+  const commit = (markerPath, next) => {
+    fs.writeFileSync(markerPath, JSON.stringify(next, null, 2));
+    const manifestPath = path.join(f.agentDir, manifestName);
+    const m = read(manifestPath);
+    m.installedAt = m.installedAt.replace("Z", "+00:00");
+    write(manifestPath, m);
+    foreignManifestBytes = fs.readFileSync(manifestPath, "utf8");
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { commit }),
+    /receipt|hash|drift|corrupt|reconcil/i,
+  );
+
+  assert.equal(fs.readFileSync(path.join(f.agentDir, manifestName), "utf8"), foreignManifestBytes);
+  assert.equal(marker(f).state, "pending");
+  assert.ok(fs.readdirSync(path.join(f.installDir, "journals")).length >= 1);
+});
+
+test("child setup returning status 0 without receipt fails closed", (t) => {
+  const f = fixture(t);
+  setupOccupiedAgent(f);
+
+  const run = (node, args, options) => {
+    if (args[0].endsWith("setup.mjs")) {
+      const res = spawnSync(node, args, options);
+      if (res.status !== 0) return res;
+      // Strip receipt delimiters from stdout
+      const strippedStdout = res.stdout
+        .replace(/---PI_AUTO_COMPACTION_SETUP_RECEIPT_START---[\s\S]*?---PI_AUTO_COMPACTION_SETUP_RECEIPT_END---/, "");
+      return { status: 0, stdout: strippedStdout, stderr: res.stderr };
+    }
+    return spawnSync(node, args, options);
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { run }),
+    /receipt|reconcil/i,
+  );
+  assert.equal(marker(f).state, "pending");
+});
+
+test("child setup with duplicate receipt delimiters fails closed", (t) => {
+  const f = fixture(t);
+  setupOccupiedAgent(f);
+
+  const run = (node, args, options) => {
+    if (args[0].endsWith("setup.mjs")) {
+      const res = spawnSync(node, args, options);
+      if (res.status !== 0) return res;
+      // Duplicate the receipt in stdout
+      const match = res.stdout.match(/---PI_AUTO_COMPACTION_SETUP_RECEIPT_START---[\s\S]*?---PI_AUTO_COMPACTION_SETUP_RECEIPT_END---/);
+      const duplicatedStdout = res.stdout + "\n" + (match ? match[0] : "");
+      return { status: 0, stdout: duplicatedStdout, stderr: res.stderr };
+    }
+    return spawnSync(node, args, options);
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { run }),
+    /Duplicate|receipt|reconcil/i,
+  );
+  assert.equal(marker(f).state, "pending");
+});
+
+test("child setup with wrong correlation nonce fails closed", (t) => {
+  const f = fixture(t);
+  setupOccupiedAgent(f);
+
+  const run = (node, args, options) => {
+    if (args[0].endsWith("setup.mjs")) {
+      const res = spawnSync(node, args, options);
+      if (res.status !== 0) return res;
+      // Tamper nonce in receipt
+      const tamperedStdout = res.stdout.replace(/"nonce":"[^"]+"/, '"nonce":"forged-stale-nonce"');
+      return { status: 0, stdout: tamperedStdout, stderr: res.stderr };
+    }
+    return spawnSync(node, args, options);
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { run }),
+    /nonce|mismatch|receipt|reconcil/i,
+  );
+  assert.equal(marker(f).state, "pending");
+});
+
+test("child setup with corrupt receipt schema fails closed", (t) => {
+  const f = fixture(t);
+  setupOccupiedAgent(f);
+
+  const run = (node, args, options) => {
+    if (args[0].endsWith("setup.mjs")) {
+      const res = spawnSync(node, args, options);
+      if (res.status !== 0) return res;
+      // Inject corrupt field into receipt
+      const tamperedStdout = res.stdout.replace(/"version":1/, '"version":1,"unauthorizedReceiptField":"evil"');
+      return { status: 0, stdout: tamperedStdout, stderr: res.stderr };
+    }
+    return spawnSync(node, args, options);
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { run }),
+    /schema|receipt|reconcil/i,
+  );
+  assert.equal(marker(f).state, "pending");
+});
+
+test("unmutated failure after actual setup completes clean compensation and restores prior agent bytes without pending journal", (t) => {
+  const f = fixture(t);
+  setupOccupiedAgent(f);
+  const beforeBytes = agentBytes(f);
+
+  const run = (node, args, options) => {
+    if (args[0].endsWith("setup.mjs")) {
+      const res = spawnSync(node, args, options);
+      if (res.status !== 0) return res;
+      // Real setup succeeded and files are unmutated, but simulate an after-setup failure
+      return { status: 1, stdout: res.stdout, stderr: "synthetic after-setup failure with intact files" };
+    }
+    return spawnSync(node, args, options);
+  };
+
+  assert.throws(
+    () => runDeploy({ ...f, adoptAgent: true }, { run }),
+    /synthetic after-setup failure with intact files/,
+  );
+
+  // Since files were unmutated and matched trusted writer receipt, compensation succeeded cleanly!
+  assert.deepEqual(agentBytes(f), beforeBytes);
+  assert.equal(marker(f).current, null);
+  assert.equal(marker(f).state, "ready");
+});
+
+test("fresh deployment without settings succeeds via actual CLI on entirely absent agent", (t) => {
+  for (const agentPreExists of [false, true]) {
+    const f = fixture(t);
+    // Create agent dir without settings.json to trigger the null snapshot path
+    if (agentPreExists) {
+      // Agent dir exists (from fixture) but remove settings.json
+      fs.rmSync(path.join(f.agentDir, "settings.json"));
+    } else {
+      // Entirely absent agent directory
+      fs.rmSync(f.agentDir, { recursive: true, force: true });
+      f.agentDir = path.join(f.base, "absent-agent");
+    }
+    const result = spawnSync(process.execPath, [
+      path.join(project, "scripts", "deploy.mjs"),
+      "--agent-dir", f.agentDir,
+      "--install-dir", f.installDir,
+      "--source-dir", f.sourceDir,
+    ], { encoding: "utf8", timeout: 30000 });
+    assert.equal(result.status, 0, `CLI must exit 0 (agentPreExists=${agentPreExists}): ${result.stderr}`);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.success, true);
+    assert.equal(output.dryRun, false);
+    // Marker must be ready with a current release and no pending
+    const m = read(path.join(f.installDir, MARKER_FILENAME));
+    assert.equal(m.state, "ready");
+    assert.notEqual(m.current, null);
+    assert.equal(m.pending, null);
+    // All 4 original overrides absent: present=false, reserve+keep present=false
+    const mf = read(path.join(f.agentDir, manifestName));
+    assert.equal(Object.keys(mf.originalOverrides).length, 4);
+    for (const modelId of Object.keys(mf.originalOverrides)) {
+      assert.equal(mf.originalOverrides[modelId].present, false);
+      assert.equal(mf.originalOverrides[modelId].reserveTokens.present, false);
+      assert.equal(mf.originalOverrides[modelId].keepRecentTokens.present, false);
+    }
+    // settings.json must exist with managed overrides created
+    const settings = read(path.join(f.agentDir, "settings.json"));
+    assert.ok(settings.compaction?.modelOverrides, "managed overrides must be created");
+    // Loader and manifest must point to the versioned release
+    assert.equal(mf.packageSourceDir, output.releaseDir);
+    assert.ok(fs.existsSync(path.join(f.agentDir, "extensions", "omniroute-compaction.ts")));
+    // Clean up installDir for the next iteration
+    fs.rmSync(f.installDir, { recursive: true, force: true });
+  }
+});
+
+test("canonical python backup snippet executes safely against controlled temporary fixture", (t) => {
+  const docsPath = path.join(project, "docs", "instalacion.md");
+  const docsContent = fs.readFileSync(docsPath, "utf8");
+  const snippetMatch = docsContent.match(/```python\n([\s\S]*?)```/);
+  assert.ok(snippetMatch, "Canonical Python backup snippet must exist in docs/instalacion.md");
+  const pythonScript = snippetMatch[1];
+
+  const tempFixture = fs.mkdtempSync(path.join(os.tmpdir(), "pi-backup-test-"));
+  trackedDeployFixtures.add(tempFixture);
+  if (t?.after) {
+    t.after(() => {
+      trackedDeployFixtures.delete(tempFixture);
+      try { fs.rmSync(tempFixture, { recursive: true, force: true }); } catch {}
+    });
+  }
+
+  const fakeHome = path.join(tempFixture, "home");
+  const fakeAgent = path.join(fakeHome, ".pi", "agent");
+  fs.mkdirSync(path.join(fakeAgent, "extensions"), { recursive: true });
+
+  fs.writeFileSync(path.join(fakeAgent, "settings.json"), JSON.stringify({ test: "settings" }));
+  fs.writeFileSync(path.join(fakeAgent, ".pi-auto-compaction-manifest.json"), JSON.stringify({ test: "manifest" }));
+  fs.writeFileSync(path.join(fakeAgent, "extensions", "omniroute-compaction.ts"), "// test loader");
+
+  // 1. Successful backup execution
+  const res = spawnSync("python3", ["-c", pythonScript], {
+    env: { HOME: fakeHome, AGENT_DIR: fakeAgent, PATH: process.env.PATH },
+    encoding: "utf8",
+  });
+
+  assert.equal(res.status, 0, `Python backup script failed: ${res.stderr}`);
+  assert.ok(res.stdout.includes("Snapshot privado completado exitosamente:"));
+
+  const baseBackupDir = path.join(fakeHome, ".local", "state", "pi-auto-compaction-backups");
+  assert.ok(fs.existsSync(baseBackupDir));
+  assert.equal(fs.statSync(baseBackupDir).mode & 0o777, 0o700);
+
+  const backupDirs = fs.readdirSync(baseBackupDir);
+  assert.equal(backupDirs.length, 1);
+  const backupFolder = path.join(baseBackupDir, backupDirs[0]);
+  assert.equal(fs.statSync(backupFolder).mode & 0o777, 0o700);
+
+  for (const name of ["settings.json", ".pi-auto-compaction-manifest.json", "omniroute-compaction.ts"]) {
+    const backupFile = path.join(backupFolder, name);
+    assert.ok(fs.existsSync(backupFile), `Backup file ${name} must exist`);
+    assert.equal(fs.statSync(backupFile).mode & 0o777, 0o600);
+  }
+
+  // 2. Reject missing required file fail-closed
+  const missingAgent = path.join(fakeHome, "missing-agent");
+  fs.mkdirSync(missingAgent, { recursive: true });
+  const resMissing = spawnSync("python3", ["-c", pythonScript], {
+    env: { HOME: fakeHome, AGENT_DIR: missingAgent, PATH: process.env.PATH },
+    encoding: "utf8",
+  });
+  assert.notEqual(resMissing.status, 0, "Must fail when required files are missing");
+
+  // 3. Reject symlink target file fail-closed
+  const symlinkAgent = path.join(fakeHome, "symlink-agent");
+  fs.mkdirSync(path.join(symlinkAgent, "extensions"), { recursive: true });
+  fs.writeFileSync(path.join(symlinkAgent, "settings.json"), "{}");
+  fs.writeFileSync(path.join(symlinkAgent, ".pi-auto-compaction-manifest.json"), "{}");
+  const targetLoader = path.join(fakeAgent, "extensions", "omniroute-compaction.ts");
+  fs.symlinkSync(targetLoader, path.join(symlinkAgent, "extensions", "omniroute-compaction.ts"));
+
+  const resSymlinkFile = spawnSync("python3", ["-c", pythonScript], {
+    env: { HOME: fakeHome, AGENT_DIR: symlinkAgent, PATH: process.env.PATH },
+    encoding: "utf8",
+  });
+  assert.notEqual(resSymlinkFile.status, 0, "Must fail when managed file is a symlink");
+  assert.ok(resSymlinkFile.stderr.includes("enlace simbólico"));
+
+  // 4. Reject symlink ancestor fail-closed
+  const symlinkBase = path.join(tempFixture, "symlink-base");
+  fs.symlinkSync(fakeAgent, symlinkBase);
+  const resSymlinkAncestor = spawnSync("python3", ["-c", pythonScript], {
+    env: { HOME: fakeHome, AGENT_DIR: symlinkBase, PATH: process.env.PATH },
+    encoding: "utf8",
+  });
+  assert.notEqual(resSymlinkAncestor.status, 0, "Must fail when ancestor is a symlink");
+  assert.ok(resSymlinkAncestor.stderr.includes("enlace simbólico"));
+});
+
+
+
+
