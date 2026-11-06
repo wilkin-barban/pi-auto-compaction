@@ -255,4 +255,208 @@ Ajustes realizados en la documentación:
 
 TDD activo en modo sin RED de código ejecutable por ser una corrección puramente documental y declarativa. Se ejecutaron validaciones estáticas de lectura de enlaces Markdown, sintaxis JSON y comprobación de identificadores documentados.
 
+# Evidencia M2: Implementación de `--adopt-agent`, compensación CAS y teardown de fixtures
+
+## Alcance y cambios realizados
+
+Implementación transaccional acotada de la tarea M2 bajo TDD estricto:
+- **`scripts/deploy.mjs`**: Incorporación de la bandera `--adopt-agent` mutuamente excluyente con `--update` y `--rollback-source`. Validación fail-closed de prerrequisitos de adopción antes de cualquier escritura: agente previamente gestionado con manifiesto `1.0.0` y loader oficial coincidente en hash, chequeo de drift en los 4 modelos gestionados, ausencia de locks y journals en el agente, verificación de fuente antigua válida e inmutable (`packageSourceDir`), raíz destino managed nueva e inexistente, y ausencia de symlinks inseguros o colisiones. En caso de fallo en setup o publicación, compensación segura mediante CAS que preserva cambios concurrentes de terceros, restaura los bytes del estado anterior del agente sin eliminar el baseline, y retiene el journal y marcador `pending` si la compensación no puede completarse de forma limpia. Marcador inicializado con `previous: null`.
+- **`test/integration/deploy.test.mjs`**: Registro de teardown por prueba (`t.after` y `afterEach`) sobre directorios temporales `pi-deploy-test-*` creados durante la ejecución, asegurando su eliminación incluso en pruebas fallidas sin tocar residuos preexistentes. Pruebas de integración para: adopción exitosa preservando baseline y fuente antigua; `--update` subsiguiente preservando la línea base original; modo `--dry-run` de solo lectura sin escrituras; rechazo previo a escrituras por manifiesto ausente, loader ajeno, hash discordante, drift de configuración, locks, journals, symlinks y colisión de raíz; compensación ante fallo de setup; preservación de mutaciones concurrentes en publicación con retención de journal; y regresión de teardown efectivo.
+- **`test/integration/portability.test.mjs`**: Registro de teardown con `t.after` y `afterEach` sobre directorios temporales sintéticos en `node_modules/.pi-portability-*` y prueba de regresión de teardown.
+- **Documentación**: Actualización en español de `README.md`, `docs/instalacion.md`, `docs/mantenimiento.md` y `docs/solucion-de-problemas.md` detallando la bandera `--adopt-agent`, sus prerrequisitos de validación, límites de rollback (no-op sobre primera release adoptada y reversión vía el setup oficial de la fuente antigua preservada), recarga obligatoria de sesiones Pi mediante `/reload`, retención indefinida de fuentes y releases históricos, y el estado pendiente de la reinstalación tras un rollback de configuración.
+
+## Disciplina TDD y evidencia observada
+
+### 1. Fase RED (Fallo observado antes de la implementación)
+Se agregaron las nuevas pruebas en `test/integration/deploy.test.mjs` y se ejecutó la suite de integración antes de modificar `scripts/deploy.mjs`:
+- **Comando**: `cd "$HOME/proyectos/pi-auto-compaction" && node --test test/integration/deploy.test.mjs test/integration/portability.test.mjs`
+- **Resultado observado**: Código de salida 1. 19 pruebas pasadas, 6 pruebas falladas como se esperaba:
+  - `successful adopt occupied valid agent preserves baseline/nonmanaged settings and old source unchanged loader/new marker ready`: Falló con `Foreign agent manifest/loader: ownership refused`.
+  - `--update later works and original baseline preserved on adopted agent`: Falló con `Foreign agent manifest/loader: ownership refused`.
+  - `dry run read only for adoption`: Falló con `Foreign agent manifest/loader: ownership refused`.
+  - `adopt missing manifest/foreign loader/bad hash/settings drift/lock/journal/symlinks/root collision invalid schema source invalid args rejects BEFORE writes`: Falló con `Foreign agent manifest/loader: ownership refused`.
+  - `failed setup/adoption post validation failure compensate old source`: Falló con `Foreign agent manifest/loader: ownership refused`.
+  - `concurrent foreign state at publication never overwrite/retain journal`: Falló por rechazo inicial.
+
+### 2. Fase GREEN (Paso de pruebas tras implementar `--adopt-agent`)
+Tras implementar la lógica de adopción y compensación en `scripts/deploy.mjs`, se ejecutó nuevamente la verificación:
+- **Comando**: `cd "$HOME/proyectos/pi-auto-compaction" && node --test test/integration/deploy.test.mjs test/integration/portability.test.mjs`
+- **Resultado observado**: Código de salida 0. **25 pruebas pasadas de 25** (19 preexistentes + 6 nuevas).
+
+### 3. Fase TRIANGULATE / REFACTOR (Suite completa anterior)
+Se ejecutó la suite de pruebas completa del proyecto previa a los hallazgos de M3:
+- **Comando**: `cd "$HOME/proyectos/pi-auto-compaction" && npm test`
+- **Resultado observado**: Código de salida 0. **171 pruebas pasadas de 171** en 10 suites (0 fallidas, 0 canceladas, 0 omitidas). Duración aproximada: 49 s.
+
+# Evidencia de Corrección CAS M2: Compensación segura contra cambios concurrentes y verificación completa
+
+## Alcance y justificación
+
+Corrección de seguridad transaccional en `scripts/deploy.mjs` y adición de pruebas de regresión en `test/integration/deploy.test.mjs`, originadas a partir del reporte del verificador independiente M3 que demostró cuatro fallos CAS (sobreescritura de cambios concurrentes en settings de compactación, loader validado solo por inclusión de subpath, manifest validado solo por packageSourceDir y captura global de marker forzando pending sobre metadatos ajenos).
+
+Los cambios en código de despliegue y pruebas fueron implementados previamente bajo TDD estricto y verificados en la fase de mapeo del incidente (`muprss3m-l-yo7r`). Esta unidad cierra formalmente la documentación técnica, los registros de evidencia y la auto-verificación completa requerida tras la interrupción por error 503 del escritor anterior.
+
+No se modificaron archivos del motor en `src/`, fixtures no autorizadas ni la instalación plana productiva o raíz gestionada en el sistema.
+
+## Disciplina TDD y evidencia observada
+
+### 1. Evidencia RED previa observada por el mapper (`muprss3m-l-yo7r`)
+Previo a la implementación de las guardas CAS, las 5 nuevas pruebas fallaron de forma determinística en `test/integration/deploy.test.mjs`:
+- **Comando**: `cd "$HOME/proyectos/pi-auto-compaction" && node --test test/integration/deploy.test.mjs`
+- **Resultado observado**: Código de salida 1 en 26.88 s. **19 pruebas pasadas, 5 pruebas falladas**:
+  - `compensation preserves concurrent modifications within compaction settings byte-identical and retains journal`
+  - `compensation preserves concurrent foreign loader containing target path byte-identical and retains journal`
+  - `compensation preserves concurrent foreign manifest baseline byte-identical and retains journal`
+  - `foreign marker is preserved byte-exact and catch does not overwrite with pending`
+  - `post-publication mutation of baseline fails closed, preserves foreign manifest and retains pending journal`
+
+### 2. Evidencia GREEN observada tras las guardas CAS (`muprss3m-l-yo7r`)
+Tras aplicar la validación CAS estricta en compensación y publicación:
+- **Comando**: `cd "$HOME/proyectos/pi-auto-compaction" && node --test test/integration/deploy.test.mjs`
+- **Resultado observado**: Código de salida 0 en 21.55 s. **24 pruebas pasadas de 24** (19 preexistentes + 5 nuevas de CAS).
+*(Nota: La suite completa `npm test` no había sido ejecutada previamente por el escritor debido a una interrupción 503 aguas arriba; no se realizó ninguna afirmación previa de ejecución completa antes de esta verificación).*
+
+### 3. Verificación de cierre ejecutada en primer plano
+
+Todos los comandos fueron ejecutados de forma individual en primer plano, utilizando rutas canónicas normalizadas con `$HOME/proyectos/pi-auto-compaction`:
+
+| Comando exacto | Resultado observado |
+| --- | --- |
+| `cd "$HOME/proyectos/pi-auto-compaction" && node --test test/integration/deploy.test.mjs test/integration/portability.test.mjs` | Código de salida 0. **30 pruebas pasadas de 30** (24 en `deploy.test.mjs` + 6 en `portability.test.mjs`), 0 fallidas, 0 canceladas, 0 omitidas. Duración observada: ~27.2 s. |
+| `cd "$HOME/proyectos/pi-auto-compaction" && npm test` | Código de salida 0. **176 pruebas pasadas de 176** en 10 suites, 0 fallidas, 0 canceladas, 0 omitidas. Duración observada: ~32.2 s. |
+
+Con esta ejecución, la suite completa asciende de 171 a **176 pruebas aprobadas al 100%**, confirmando la solidez de las guardas CAS y la ausencia de regresiones en los módulos de configuración, contexto, errores, resumen, telemetría, UI, scripts de despliegue, durabilidad y portabilidad.
+
+# Evidencia M3: Resolución de bloqueadores de reverificación y endurecimiento documental
+
+## Alcance y justificación
+
+Resolución de los tres bloqueadores restantes identificados en la reverificación independiente de M3 (`/tmp/pi-m3-reverify-bVQafV/faults.json`):
+1. **Eliminación de la heurística de ventana temporal (`±10s`) en compensación**: Sustitución de comparaciones de holgura temporal en `isOwnManifest` (`Math.abs(Date.parse(...) - ...) <= 10_000`) por la captura y verificación exacta de post-imágenes conocidas (`knownPostimage`) tras el setup, validación estricta de esquema (`exact`) en manifiestos y comprobación determinista contra metadatos en disco (`mtimeMs` de la escritura atómica y timestamp de respaldo en `.pi-auto-compaction-state`). Si el manifiesto fue mutado (incluso por variaciones de `installedAt` dentro de la ventana de setup), la compensación rechaza la sobreescritura, preserva los bytes foráneos intactos y retiene el journal y marcador en estado `failed`/`pending`.
+2. **Validación completa de snapshot y marcador post-commit**: Inclusión de validación de esquema exacto (`exact`) para el marcador de despliegue y comprobación de igualdad estricta contra `next`. Validación de esquema sin campos desconocidos en el manifiesto (`exact`) tras el commit. Si un hook de commit o proceso concurrente inyecta campos no autorizados en el manifiesto o altera el marcador, la operación falla cerrado, preserva los bytes mutados sin sobreescritura ciega, retiene el journal en estado `failed` y no retorna `success: true` ni `state: "ready"`.
+3. **Endurecimiento de procedimientos de backup y corrección de error real de desincronización**: Actualización de `docs/instalacion.md`, `docs/mantenimiento.md` y `docs/solucion-de-problemas.md`:
+   - Se corrigió el mensaje de error documentado tras revertir con el setup antiguo: el error real observado al intentar un posterior `--update` es `Agent manifest source ownership mismatch`, no la cita genérica de manifiesto ajeno.
+   - Procedimientos de snapshot seguros en Python y Shell que verifican que ningún directorio ancestro sea un enlace simbólico (`verify_safe_path`), fallan cerrado si falta cualquiera de los tres archivos gestionados requeridos (`settings.json`, `.pi-auto-compaction-manifest.json`, `extensions/omniroute-compaction.ts`), imponen `set -euo pipefail` en Shell y aclaran explícitamente que excluir `auth.json` no garantiza la ausencia total de secretos en `settings.json`.
+
+## Disciplina TDD y evidencia observada
+
+### 1. Fase RED (Fallo observado antes de la implementación)
+Se agregaron 3 pruebas de integración específicas en `test/integration/deploy.test.mjs` reproduciendo los tres bloqueadores y se ejecutó la suite:
+- **Comando**: `cd "$HOME/proyectos/pi-auto-compaction" && node --test test/integration/deploy.test.mjs`
+- **Resultado observado**: Código de salida 1 en 25.74 s. **24 pruebas pasadas, 3 pruebas falladas**:
+  - `compensation preserves concurrent foreign manifest timestamp mutation within window, byte-identical and retains journal`: Falló con `AssertionError` debido a que la ventana de 10s consideró el manifiesto como propio y sobreescribió los bytes foráneos con el estado anterior en lugar de preservarlos y retener el journal en `pending`.
+  - `postcommit unknown manifest field fails closed, preserves foreign manifest and retains pending journal`: Falló con `Missing expected exception` debido a que la publicación post-commit no validaba campos desconocidos en el manifiesto y retornaba `success: true` con `state: "ready"`.
+  - `postcommit foreign marker mutation fails closed, preserves foreign marker byte-identical and retains pending journal`: Falló con `Missing expected exception` debido a que no se validaba el marcador tras la invocación de `commit` y retornaba `success: true`.
+
+### 2. Fase GREEN (Paso de pruebas tras las correcciones)
+Tras implementar la validación de post-imagen exacta, la eliminación de la holgura temporal y la validación post-commit en `scripts/deploy.mjs`:
+- **Comando**: `cd "$HOME/proyectos/pi-auto-compaction" && node --test test/integration/deploy.test.mjs`
+- **Resultado observado**: Código de salida 0 en 22.12 s. **27 pruebas pasadas de 27** (24 preexistentes + 3 nuevas).
+
+### 3. Fase TRIANGULATE / REFACTOR (Verificación completa y suites de integración)
+Todos los comandos fueron ejecutados de forma individual en primer plano, utilizando rutas canónicas normalizadas:
+
+| Comando exacto | Resultado observado |
+| --- | --- |
+| `cd "$HOME/proyectos/pi-auto-compaction" && node --test test/integration/deploy.test.mjs test/integration/portability.test.mjs` | Código de salida 0. **33 pruebas pasadas de 33** (27 en `deploy.test.mjs` + 6 en `portability.test.mjs`), 0 fallidas, 0 canceladas, 0 omitidas. Duración observada: ~30.4 s. |
+| `cd "$HOME/proyectos/pi-auto-compaction" && npm test` | Código de salida 0. **179 pruebas pasadas de 179** en 10 suites, 0 fallidas, 0 canceladas, 0 omitidas. Duración observada: ~27.0 s. |
+
+### 4. Higiene estricta de fixtures y verificación de conteos históricos
+
+- Conteo en `/tmp/pi-deploy-test-*`: **155 directorios antes -> 155 directorios después**.
+- Conteo en `node_modules/.pi-portability-*`: **20 directorios antes -> 20 directorios después**.
+- Los fixtures sintéticos temporales creados por las pruebas (`fixture(t)` y hooks de teardown) fueron limpiados de forma determinista al finalizar cada caso, sin alterar residuos históricos preexistentes ni dejar rastros transitorios.
+
+# Evidencia M3 Final: Rediseño hacia Trusted-Writer Intent Receipt y Validación Criptográfica Exacta
+
+## Alcance y justificación
+
+Resolución integral y definitiva de las vulnerabilidades descubiertas en la verificación independiente final (`/tmp/pi-m3-final-LlHOI0/faults.json`):
+1. **Rediseño hacia Trusted-Writer Intent Receipt**:
+   - Eliminación completa de `isOwnManifest`, `Date.parse`, comparaciones de `stat.mtimeMs`, inspección de timestamps de backup y `knownPostimage`.
+   - El setup writer (`scripts/setup.mjs`) computa los bytes serializados exactos en memoria (`updatedSettingsContent`, `loaderContent`, `newManifestContent`) ANTES de realizar cualquier escritura en disco.
+   - Sella un recibo criptográfico SHA-256 (`createSetupReceipt`) que incluye `installedAt` literal (sin equivalencias de parseo), `nonce` de correlación, `targetDir`, `packageSourceDir`, `version`, `manifestHash`, `loaderHash` y `settingsHash`.
+   - Emite el recibo antes de escrituras a través del hook pre-escritura `onReceipt` y mediante un canal delimitado estricto en `stdout` cuando se suministra el flag de CLI `--receipt-nonce`.
+   - `scripts/deploy.mjs` confía ÚNICAMENTE en el recibo validado por esquema estricto (`parseAndValidateReceipt`) y compara los hashes calculados contra el disco real.
+   - Rechazo fail-closed si el proceso hijo exitoso (status 0) no emite un recibo válido, si hay delimitadores duplicados, si el nonce no coincide o si el esquema del recibo es inválido.
+2. **Verificación postsetup y postcommit exacta**:
+   - Postsetup: verificación de que los tres archivos gestionados en disco coinciden byte por byte con los hashes del recibo; validación de esquema estricto del manifiesto rechazando cualquier campo desconocido (`exact`), preservación estricta de `originalOverrides` e invariantes de configuración ajena.
+   - Postcommit: comparación de los tres hashes del recibo y verificación estricta de bytes del marcador `next` contra el archivo en disco (`rawPostMarker !== expectedMarkerBytes`). Cualquier diferencia preserva los bytes foráneos, retiene el journal fallido y mantiene el marcador en estado `pending`.
+3. **Compensación sin heurísticas**:
+   - El manifiesto se restaura ÚNICAMENTE si coincide exactamente con el `manifestHash` sellado en el recibo antes de las escrituras. Si el manifiesto fue mutado (incluso por variaciones de formato ISO como `...+00:00` o campos desconocidos) o si no se cuenta con un recibo válido, NUNCA se asume como propio: se preservan los bytes foráneos y se escala a reconciliación manual.
+   - Preservación determinista del marcador foráneo: el marcador solo se altera si coincide byte por byte con las imágenes previas conocidas (`pending` o `next`). Si fue modificado por un tercero con campos desconocidos, se preserva idéntico.
+4. **Consolidación del procedimiento de backup canónico en Python**:
+   - Se eliminó el script duplicado en Shell en `docs/instalacion.md` y `docs/solucion-de-problemas.md`, consolidando un único script en Python canónico.
+   - El script en Python verifica ancestros mediante `os.lstat` rechazando symlinks antes de crear directorios o modificar permisos.
+   - Exige pertenencia estricta al UID del usuario actual dentro de `$HOME` y UID root o actual en ancestros del sistema.
+   - Asegura base privada `0700` bajo `~/.local/state/pi-auto-compaction-backups` y copia los tres archivos con `O_EXCL` y permisos `0600`.
+   - Requiere que los tres archivos gestionados sean regulares y tengan `nlink == 1`, fallando cerrado ante archivos faltantes, symlinks o enlaces duros.
+
+## Disciplina TDD y evidencia observada
+
+### 1. Fase RED (Fallos observados antes de la implementación)
+Se agregaron 4 pruebas de integración en `test/integration/deploy.test.mjs` reflejando las 4 fallas exactas de `/tmp/pi-m3-final-LlHOI0/faults.json`:
+- **Comando**: `cd "$HOME/proyectos/pi-auto-compaction" && node --test test/integration/deploy.test.mjs`
+- **Resultado observado**: Código de salida 1 en 25.45 s. **27 pruebas pasadas, 4 pruebas falladas**:
+  - `compensation preserves equivalent ISO timestamp format foreign manifest mutation, byte-identical and retains journal`: Falló con `AssertionError` porque la compensación anterior usaba `Date.parse`, consideraba idénticos los milisegundos de `...+00:00` y sobreescribía el manifiesto foráneo en lugar de preservarlo.
+  - `successful setup return status 0 preserves foreign unknown manifest field, byte-identical and retains pending journal`: Falló con `AssertionError` porque `knownPostimage` capturaba el manifiesto foráneo tras el setup y luego la compensación lo sobreescribía.
+  - `successful setup return status 0 preserves foreign valid baseline mutation, byte-identical and retains pending journal`: Falló con `AssertionError` porque `knownPostimage` capturaba el manifiesto con baseline mutado y la compensación lo sobreescribía.
+  - `postcommit equivalent ISO timestamp manifest mutation fails closed, preserves foreign manifest and retains pending journal`: Falló con `Missing expected exception` porque la verificación post-commit no comparaba el hash exacto del manifiesto y retornaba `success: true`.
+
+### 2. Fase GREEN (Paso de pruebas tras el rediseño)
+Tras implementar el sealed writer receipt en `src/install-state.mjs`, `scripts/setup.mjs` y `scripts/deploy.mjs`:
+- **Comando**: `cd "$HOME/proyectos/pi-auto-compaction" && node --test test/integration/deploy.test.mjs`
+- **Resultado observado**: Código de salida 0. **31 pruebas pasadas de 31**. Las 4 pruebas RED pasaron a GREEN.
+
+### 3. Fase TRIANGULATE / REFACTOR (Pruebas unitarias de recibo, casos límite y suites completas)
+Se incorporaron pruebas adicionales:
+- En `test/integration/scripts.test.mjs`: cómputo de recibo en memoria pre-escritura con hashes SHA-256 exactos, hook `onReceipt`, emisión en CLI con `--receipt-nonce`, compatibilidad hacia atrás sin flag y rechazo de flags incompletos.
+- En `test/integration/deploy.test.mjs`: rechazo fail-closed de setup exitoso sin recibo, delimitadores duplicados, nonce incorrecto, esquema corrupto, compensación limpia ante fallos con archivos intactos y ejecución del snippet Python canónico en fixture temporal controlado.
+
+| Comando exacto | Resultado observado |
+| --- | --- |
+| `cd "$HOME/proyectos/pi-auto-compaction" && node --test test/integration/deploy.test.mjs test/integration/portability.test.mjs test/integration/scripts.test.mjs` | Código de salida 0. **136 pruebas pasadas de 136** (37 en `deploy.test.mjs` + 6 en `portability.test.mjs` + 93 en `scripts.test.mjs`), 0 fallidas, 0 canceladas, 0 omitidas. Duración: ~36.5 s. |
+| `cd "$HOME/proyectos/pi-auto-compaction" && npm test` | Código de salida 0. **193 pruebas pasadas de 193** en 10 suites (mapeado desde la línea base anterior de 179 pruebas: +14 pruebas nuevas), 0 fallidas, 0 canceladas, 0 omitidas. Duración: ~38.6 s. |
+| Ejecución en fixture temporal del snippet canónico de Python | Salida exitosa: creación de directorio base 0700, subdirectorio exclusivo 0700, archivos copiados con O_EXCL y modo 0600, rechazo fail-closed ante archivos faltantes, symlinks en destino y symlinks en ancestros. |
+
+### 4. Higiene estricta de fixtures y verificación de residuos
+- Conteo en `/tmp/pi-deploy-test-*`: **155 directorios antes -> 155 directorios después**.
+- Conteo en `node_modules/.pi-portability-*`: **20 directorios antes -> 20 directorios después**.
+- Los fixtures temporales propios (`trackedDeployFixtures`) y el fixture de backup en Python se limpian automáticamente tras cada ejecución sin alterar residuos preexistentes.
+
+# Evidencia M2 Cierre: Pruebas de integridad del recibo de intención pre-escritura
+
+## Alcance y justificación
+
+Cierre del contrato de verificación M2 con dos pruebas de comportamiento adicionales que demuestran la integridad criptográfica del trusted-writer intent receipt contra mutación de disco y la recuperabilidad del recibo desde la salida estándar de un proceso hijo fallido con correlación estricta de nonce.
+
+Archivos modificados:
+- `test/integration/scripts.test.mjs`: Dos pruebas nuevas de integración.
+- `repository-evidence.md`: Esta sección de evidencia.
+
+No se modificaron archivos del motor en `src/`, `scripts/`, la instalación activa, dependencias, journals, manifiestos ni archivos de configuración productiva.
+
+## Disciplina TDD y evidencia observada
+
+Modo TDD estricto activado por elección explícita previa. Las dos pruebas ejercitan comportamiento existente ya implementado correctamente en el recibo sellado; no requirieron cambios en el código de producción. Se reportan como GREEN directo con justificación:
+
+- **RED**: No aplicable — las pruebas validan contratos de seguridad del receipt ya implementados (in-memory computation y stdout emission antes de escrituras); el código no requirió cambios; agregar RED artificial sin implementación pendiente sería evidencia fabricada.
+- **GREEN**: Las dos pruebas pasaron en la primera ejecución, confirmando que:
+  1. **`receipt hashes reflect intended in-memory bytes, unaffected by concurrent disk mutation between receipt and commit`**: El `settingsHash` del recibo NO coincide con los bytes mutados por `beforeCommit`, demostrando que el recibo se sella desde la serialización en memoria ANTES de cualquier escritura a disco. Los tres hashes son SHA-256 hex de 64 caracteres válidos.
+  2. **`failed setup CLI emits receipt to stdout with strict nonce before the failure, recoverable by deploy receipt parser`**: Un hijo que falla en `at-loader-write` (después de escribir settings pero antes del loader) emite el recibo delimitado a stdout ANTES del fallo. El recibo es recuperable por `parseAndValidateReceipt` con correlación exacta de nonce. Un nonce incorrecto es rechazado con `nonce mismatch`.
+
+### Verificación de cierre ejecutada en primer plano
+
+| Comando exacto | Resultado observado |
+| --- | --- |
+| `cd "$HOME/proyectos/pi-auto-compaction" && node --test test/integration/deploy.test.mjs test/integration/portability.test.mjs test/integration/scripts.test.mjs` | Código de salida 0. **138 pruebas pasadas de 138** (37 en `deploy.test.mjs` + 6 en `portability.test.mjs` + 95 en `scripts.test.mjs`), 0 fallidas, 0 canceladas, 0 omitidas. |
+| `cd "$HOME/proyectos/pi-auto-compaction" && npm test` | Código de salida 0. **195 pruebas pasadas de 195** en 10 suites (193 previas + 2 nuevas), 0 fallidas, 0 canceladas, 0 omitidas. |
+
+### Correlación con evidencia sintética previa
+
+Los 16 casos del verificador independiente `/tmp/pi-m3-final-LlHOI0/faults.json` permanecen cubiertos por las 37 pruebas existentes en `deploy.test.mjs`. Las 2 nuevas pruebas en `scripts.test.mjs` completan la cobertura del contrato de intención sellada que subyace a esos 16 casos.
+
+## Estado de backup canónico
+
+Las tres guías de documentación (`docs/instalacion.md`, `docs/mantenimiento.md`, `docs/solucion-de-problemas.md`) contienen exclusivamente el procedimiento canónico en Python para snapshot seguro, sin duplicados en Shell. El script Python valida todos los ancestros con `lstat` rechazando symlinks, exige UID del usuario actual para archivos bajo `$HOME`, acepta root o UID actual para ancestros del sistema, requiere los 3 archivos regulares con `nlink == 1`, crea copias con `O_EXCL`/`0600` en un directorio exclusivo bajo `~/.local/state/pi-auto-compaction-backups` con permisos `0700`, y falla cerrado ante cualquier archivo faltante, symlink o UID ajeno. La prueba de integración `canonical python backup snippet executes safely against controlled temporary fixture` ejercita exitosamente este script contra fixtures sintéticos temporales sin credenciales reales.
 
