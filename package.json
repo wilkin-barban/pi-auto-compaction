@@ -1,6 +1,6 @@
 {
   "name": "pi-auto-compaction",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Extensión privada de compactación automática controlada por el usuario para Pi, gentle-shell y herdr",
   "private": true,
   "repository": {

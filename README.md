@@ -94,6 +94,26 @@ Cada opción muestra la información clave del modelo:
 provider/id · Nombre descriptivo · ctx <ventana_tokens> · max <max_tokens>
 ```
 
+#### Selector con scroll, búsqueda incremental y navegación (v1.2.1+)
+En interfaces interactivas (TUI), `/compaction` utiliza un selector construido con `SelectList` de `@earendil-works/pi-tui`:
+- **Scroll real y soporte para 100+ modelos**: Maneja listas extensas de más de 100 modelos sin desbordar la pantalla. El número de opciones visibles (`maxVisible`) se calcula dinámicamente a partir de la altura del terminal (`terminal.rows`), garantizando que todos los modelos —incluidos los últimos de la lista— sean plenamente alcanzables.
+- **Búsqueda incremental**: Permite escribir directamente para filtrar en tiempo real por proveedor, identificador o nombre descriptivo. Si no existen coincidencias, el selector informa `"Sin coincidencias"`.
+- **Teclas y controles soportados**:
+  - `↑` / `↓` (o `j` / `k`): desplazarse opción por opción.
+  - `PgUp` / `PgDn`: retroceder o avanzar una página completa.
+  - `Home` / `End`: saltar al primer o último modelo de la lista.
+  - **Escribir para buscar** (type to search): filtrar incrementalmente mientras escribís.
+  - **Rueda del ratón** (mouse wheel): desplazamiento con rueda en terminales compatibles.
+  - `Enter`: confirmar y seleccionar el modelo resaltado.
+  - `Esc`: cancelar la selección y cerrar sin realizar cambios.
+- **Fallback plano en hosts sin UI personalizada**: En entornos headless o terminales sin soporte de `ctx.ui.custom`, el comando recurre automáticamente al diálogo plano `ui.select`. En este modo de degradación, no hay scroll ni búsqueda.
+
+#### Configuración manual / Workaround (sin usar el selector interactivo)
+Si operás en un entorno sin TUI o preferís configurar el resumidor de forma declarativa sin interactuar con el selector:
+1. **Archivo JSON**: Editá o creá `$PI_CODING_AGENT_DIR/.pi-auto-compaction-settings.json` (por defecto `$HOME/.pi/agent/.pi-auto-compaction-settings.json`) con el esquema documentado a continuación.
+2. **Variables de entorno**: Definí las variables `PI_AUTO_COMPACTION_PRIMARY_PROVIDER`, `PI_AUTO_COMPACTION_PRIMARY_MODEL`, `PI_AUTO_COMPACTION_FALLBACK_PROVIDER` y `PI_AUTO_COMPACTION_FALLBACK_MODEL`.
+3. Ejecutá `/reload` en tu sesión de Pi y verificá que los modelos efectivos y sus fuentes sean reconocidos correctamente mediante `doctor` (`npm run doctor` o `node scripts/doctor.mjs`).
+
 #### Reglas de validación y límites en el panel:
 - **Modelos dinámicos del harness**: La lista no está hard-codeada; se consulta en tiempo real desde el registro de modelos de Pi (`ctx.modelRegistry`). Si un modelo no tiene credenciales válidas en `auth.json`, no aparece en la lista.
 - **Respaldo distinto**: El modelo de respaldo debe ser diferente del primario; si se elige el mismo, el panel avisa y rechaza guardar para garantizar redundancia efectiva.

@@ -220,3 +220,30 @@ Se evaluó la posibilidad de integrar la configuración dentro de la página nat
 4. **Respeto a la política de No-Parches**: Intentar inyectar la configuración en esas páginas requeriría parches invasivos sobre `node_modules` o sobre binarios instalados globalmente, violando las directrices de integridad del repositorio.
 
 Por consiguiente, la implementación de un comando interactivo propio (`/compaction`), combinado con el indicador en el footer (`pi-auto-compaction-model`) y persistencia atómica en `.pi-auto-compaction-settings.json`, ofrece una experiencia de usuario ergonómica, limpia y 100% compatible con las APIs oficiales del SDK.
+
+### Selector de modelos con scroll real, búsqueda incremental y `SelectList` (Release 1.2.1)
+
+En la versión 1.2.0, `/compaction` delegaba la selección en el diálogo estándar `ctx.ui.select` del SDK de Pi. Sin embargo, en Pi 1.5.0 este diálogo se implementa mediante `ExtensionSelectorComponent`, que renderiza todas las opciones de la lista como líneas de texto planas (`Text`) sin viewport, sin scroll y sin barra de búsqueda: aunque el índice interno se mueva con flechas o `j`/`k`, la vista en pantalla permanece fija y los últimos modelos de una lista extensa (100+ modelos) quedan visualmente inalcanzables.
+
+Para resolver este problema sin violar la integridad del sistema, la versión 1.2.1 incorpora en `src/model-selector.mjs` un selector interactivo propio montado sobre `ctx.ui.custom` y las primitivas de `@earendil-works/pi-tui`:
+
+1. **Componente basado en `SelectList`**: Utiliza `SelectList` de `@earendil-works/pi-tui`, que implementa un viewport con desplazamiento dinámico de opciones, indicador de avance (`x/total`) y soporte de temas visuales mediante `SelectListTheme`.
+2. **Cálculo de `maxVisible` derivado de las filas del terminal**: Para asegurar que el diálogo nunca desborde el terminal ni oculte elementos esenciales, la cantidad de elementos visibles se calcula mediante:
+   $$\text{maxVisible} = \max\left(5, \min\left(\text{count}, (\text{terminal.rows} \mathbin{??} 24) - 10\right)\right)$$
+   Este cálculo descuenta 10 filas para la cabecera del título, el campo de búsqueda `Input`, la línea inferior de atajos (`PICKER_HINTS`) y los márgenes verticales de seguridad, garantizando una ventana de al menos 5 filas incluso en terminales compactos.
+3. **Búsqueda incremental determinista (`filterModels`)**: Integra un campo `Input` en la parte superior. Al escribir, el selector aplica un filtro tokenizado equivalente a una búsqueda difusa (*fuzzy filter*):
+   - La consulta se normaliza a minúsculas y se divide en tokens separados por espacios o barras (`/`).
+   - Cada modelo debe contener todos los tokens en su proveedor, identificador o nombre descriptivo.
+   - Los resultados se ordenan deterministamente otorgando mayor prioridad a coincidencias exactas y coincidencias en la clave `provider/modelId` sobre coincidencias en el nombre descriptivo.
+   - Una consulta vacía devuelve el listado completo ordenado alfabéticamente; si no existen coincidencias, renderiza `"Sin coincidencias"`.
+4. **Manejo de teclado y rueda de ratón (`handleInput` y `handleMouse`)**:
+   - **Navegación de lista**: Las teclas `Key.up`, `Key.down`, `Key.pageUp`, `Key.pageDown`, `Key.home`, `Key.end`, así como `j` y `k`, se delegan directamente a `list.handleInput(data)` para desplazar el cursor y el viewport.
+   - **Búsqueda en vivo**: Cualquier otro carácter ingresado se dirige al componente `Input`. Si el valor de la búsqueda cambia, se reconstruye inmediatamente la lista de opciones filtradas manteniendo la posición coherente.
+   - **Confirmación y cancelación**: `Key.enter` confirma y resuelve el modelo resaltado; `Key.escape` cancela la selección retornando `undefined`.
+   - **Rueda del ratón**: `handleMouse(event)` delega directamente en `list.handleMouse(event)`, permitiendo que terminales con soporte de eventos de ratón hagan scroll fluido con la rueda.
+5. **Fallback plano a `ui.select` en hosts sin UI personalizada**: Si el entorno de ejecución no es interactivo (por ejemplo, modo headless, RPC o entornos donde `ctx.ui.custom` es `undefined` o la carga de `@earendil-works/pi-tui` no está disponible), `selectModel` en `src/compaction-command.mjs` recurre limpiamente al `ctx.ui.select` estándar. Aunque este fallback carece de scroll y búsqueda, asegura que el comando no lance excepciones ni interrumpa la sesión.
+6. **Por qué Pi y gentle-shell no se parchean**:
+   Modificar los binarios de Pi o alterar los archivos de `ExtensionSelectorComponent` dentro de los paquetes globales de `@earendil-works/pi-coding-agent` o `gentle-shell` violaría la política fundamental de No-Parches del repositorio. Cualquier actualización externa de Pi o del sistema operativo sobrescribiría los parches. En su lugar:
+   - La extensión consume exclusivamente la API pública y documentada `ctx.ui.custom`.
+   - Carga las primitivas de `@earendil-works/pi-tui` a través de la función `loadPiTUI` en `src/pi-sdk.mjs`, resolviendo el paquete de forma adyacente al SDK de Pi detectado.
+   - De este modo, el release desplegado conserva intacta su allowlist estricta de imports de despliegue y sobrevive a actualizaciones futuras sin riesgo de regresiones invasivas.

@@ -8,6 +8,18 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 
 ---
 
+## [1.2.1] - 2026-11-06
+
+### Corregido
+
+- Selector de modelos en `/compaction`: scroll real, búsqueda incremental y `maxVisible` derivado de las filas del terminal mediante `SelectList` de `@earendil-works/pi-tui`. Permite que los últimos modelos de una lista larga de más de 100 opciones sean plenamente alcanzables y seleccionables, con soporte de navegación por teclado (`↑↓`, `PgUp/PgDn`, `Home/End`, `j/k`, `Enter`, `Esc`), rueda del ratón y fallback plano a `ui.select` en hosts sin UI personalizada.
+
+### Documentación
+
+- Documentado el workaround manual de configuración mediante edición directa de `$PI_CODING_AGENT_DIR/.pi-auto-compaction-settings.json` o uso de variables de entorno `PI_AUTO_COMPACTION_*`, seguido de `/reload` y verificación con `doctor`.
+
+---
+
 ## [1.2.0] - 2026-11-06
 
 ### Agregado

@@ -20,10 +20,10 @@ Decisión: `ctx.ui.custom` con `SelectList` + `Input` + `fuzzyFilter` de `@earen
 
 ## Tareas
 
-- T1 — S1 selector + tests. Inline. Commit propio.
-- T2 — S2 integración en `/compaction` + tests. Inline. Commit propio.
-- T3 — S3 completar tests de render/preselección/fallback. Inline. Commit propio.
-- T4 — S4 docs, CHANGELOG 1.2.1, bump y evidencia. Inline. Commit propio.
+- T1 — S1 selector + tests. Inline. Commit propio. **Hecho**: `331c74c`; fix de aislamiento `07af316`.
+- T2 — S2 integración en `/compaction` + tests. Inline. Commit propio. **Hecho**: `f843bf2`.
+- T3 — S3 completar tests de render/preselección/fallback. Inline. Commit propio. **Hecho**: incluido en `331c74c` y `f843bf2`.
+- T4 — S4 docs, CHANGELOG 1.2.1, bump y evidencia. Inline. Commit propio. **Hecho**: docs/release en el commit de cierre; writer cancelado a los ~10,5 min con los archivos ya escritos, diff revisado y completado inline.
 - T5 — S5 suite, smoke, push, CI y deploy live. Inline. Cierre.
 
 ## Criterios de aceptación
@@ -39,8 +39,14 @@ Decisión: `ctx.ui.custom` con `SelectList` + `Input` + `fuzzyFilter` de `@earen
 
 ## Evidencia RED/GREEN
 
-- Pendiente al iniciar T1.
+- **T1 (selector)**: RED `node --test test/unit/model-selector.test.mjs` → `fuzzyFilter is not defined` y, al inyectar las primitivas, `Input is not a constructor`; GREEN 17/17 con `SelectList`, `Input` y `matchesKey` inyectados desde `loadPiTUI`. Render acotado: 100+ modelos con `rows=20` produce ≤ 4 + `maxVisible` líneas y muestra el contador de scroll.
+- **T2/T3 (integración)**: `test/unit/compaction-command.test.mjs` 17/17, con dos casos nuevos: el picker custom en TUI (dos invocaciones, cancelación y guardado) y el fallback `ui.select` fuera de TUI. Ningún caso existente se debilitó.
+- **Hallazgo de aislamiento**: con el archivo real `.pi-auto-compaction-settings.json` presente, las suites unitarias y `pi-sdk-runtime` cambiaban de resultado (`'file' !== 'default'`, historial de 850k enviado a otro modelo). Se corrigió con `test/env-isolation.mjs` como preload de `npm test` y rutas explícitas en los tests afectados.
+- **Bloqueo de deploy detectado y resuelto**: el allowlist de `scripts/deploy.mjs` rechaza imports no relativos en `src/`, así que `@earendil-works/pi-tui` se resolvió con `loadPiTUI()` en `src/pi-sdk.mjs` (import computado + búsqueda junto al SDK), igual que `loadPiAI`.
+- Suite completa: **322/322 en 31 suites**; smoke Pi `PI_COMPAT_VERSION=0.87.1` 5/5.
 
 ## Log
 
 - L1 (usuario): «Quiero implementar la **opción B**: un selector propio con `ctx.ui.custom` y `SelectList` de `@earendil-works/pi-tui`, con scroll real, `maxVisible`, búsqueda/filtro y soporte de teclado/rueda. Release **1.2.1**, directo a `main`, publicado, desplegado y con el workaround documentado.» Estado inicial: `main == origin/main == 2668205`, suite 302/302 en 25 suites, CI verde, release live `60712d39…`, `doctor` HEALTHY, settings con `commandcode/claude-haiku-5-5` y `commandcode/claude-sonnet-5-5`.
+
+- Commits de la unidad: `3cc77c9` ODD, `07af316` aislamiento de tests, `331c74c` selector, `f843bf2` integración, cierre docs/release. Base `2668205`.

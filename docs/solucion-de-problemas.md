@@ -290,3 +290,40 @@ La extensión aplica un límite estricto de **60 segundos por intento** para evi
 1. **Modelos más livianos**: Utilizá versiones cuantizadas más ligeras (por ejemplo `qwen2.5-coder:7b` en lugar de versiones de `14b` o `32b`).
 2. **Inversión de roles**: Configurá un modelo rápido en la nube (como `antigravity/gemini-3.8-flash-tiered` o `openai/gpt-4o-mini`) como primario y dejá el modelo local como respaldo (o viceversa según tu preferencia de costos).
 3. **Optimización de inferencia local**: Verificá que Ollama tenga habilitada la descarga completa de capas en GPU (`num_gpu`) para reducir los tiempos de generación.
+
+---
+
+## 13. Navegación en listas largas de modelos en `/compaction` o un modelo específico no aparece
+
+### Síntoma
+En versiones anteriores a 1.2.1 o en entornos sin UI personalizada, el diálogo estándar de Pi no permitía hacer scroll: al listar decenas o más de 100 modelos, el cursor se desplazaba pero la vista quedaba fija, dejando los últimos modelos inalcanzables visualmente. Asimismo, puede ocurrir que un modelo esperado no se localice fácilmente a simple vista en la lista interactiva.
+
+### Comportamiento del sistema (v1.2.1+)
+A partir de la versión 1.2.1, `/compaction` reemplaza el selector plano por un componente interactivo con `SelectList` de `@earendil-works/pi-tui`:
+- **Scroll real y ventana acotada (`maxVisible`)**: El viewport se adapta a la altura del terminal y permite desplazarse fluidamente a través de listas de 100+ modelos con las teclas `↑`/`↓`, `j`/`k`, `PgUp`/`PgDn`, `Home`/`End` y con la rueda del ratón (`mouse wheel`). Los últimos modelos del catálogo son plenamente alcanzables.
+- **Búsqueda incremental**: Podés escribir texto directamente para filtrar en tiempo real por proveedor, identificador o nombre descriptivo. Si no hay coincidencias, el selector muestra `"Sin coincidencias"`.
+
+### Qué hacer si un modelo no aparece en el selector
+1. **Buscar por proveedor o identificador**: Escribí el nombre del proveedor o parte del identificador (por ejemplo `claude`, `deepseek`, `gemini`, `commandcode` o el ID exacto del modelo). El filtro es determinista e insensible a mayúsculas/minúsculas.
+2. **Comprobar credenciales del modelo**: La lista en `/compaction` solo incluye modelos de tipo chat con credenciales activas y válidas (`hasConfiguredAuth`). Si el proveedor no está autenticado en `auth.json`, el modelo no se listará. Verificá si el modelo está disponible y autenticado ejecutando `/model` dentro de Pi.
+3. **Verificar diagnóstico con `doctor`**: Ejecutá `npm run doctor` (o `node scripts/doctor.mjs`). La herramienta inspecciona los catálogos locales (`models.json`, `models-store.json`, `commandcode-models.json`) y el registro de Pi, emitiendo advertencias claras si un modelo configurado no está disponible o presenta credenciales ausentes.
+
+### Fallback y configuración manual (Workaround con JSON o variables de entorno)
+- **Hosts sin interfaz interactiva (fallback plano)**: Si el agente se ejecuta en un host o modo sin soporte de `ctx.ui.custom` (modo headless, print o terminales limitadas), el comando recurre automáticamente al selector plano `ui.select`, el cual carece de scroll y búsqueda incremental.
+- **Workaround manual**: Siempre podés omitir el selector interactivo y definir los modelos de compactación directamente por cualquiera de estas vías:
+  1. Editando el archivo de persistencia `$PI_CODING_AGENT_DIR/.pi-auto-compaction-settings.json` (o `$HOME/.pi/agent/.pi-auto-compaction-settings.json`):
+     ```json
+     {
+       "version": 1,
+       "primary": { "provider": "commandcode", "modelId": "claude-haiku-5-5" },
+       "fallback": { "provider": "commandcode", "modelId": "claude-sonnet-5-5" }
+     }
+     ```
+  2. O mediante variables de entorno:
+     ```bash
+     export PI_AUTO_COMPACTION_PRIMARY_PROVIDER="commandcode"
+     export PI_AUTO_COMPACTION_PRIMARY_MODEL="claude-haiku-5-5"
+     export PI_AUTO_COMPACTION_FALLBACK_PROVIDER="commandcode"
+     export PI_AUTO_COMPACTION_FALLBACK_MODEL="claude-sonnet-5-5"
+     ```
+  3. Ejecutá `/reload` en la sesión de Pi y comprobá los modelos activos con `npm run doctor`.

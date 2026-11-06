@@ -203,7 +203,8 @@ rm "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/.pi-auto-compaction-settings.json"
 
 - La eliminación es limpia y segura: la ausencia del archivo no se considera un error ni una advertencia.
 - En el próximo ciclo de compactación, la extensión detectará la ausencia del archivo y utilizará de forma automática los modelos por defecto.
-- También podés reconfigurar los modelos en caliente en cualquier momento ejecutando `/compaction` dentro de Pi.
+- También podés reconfigurar los modelos en caliente en cualquier momento ejecutando `/compaction` dentro de Pi, cuyo selector TUI incluye búsqueda incremental y scroll real (`SelectList`) para navegar catálogos de más de 100 modelos.
+- Si preferís configurar el resumidor sin usar la interfaz interactiva, se admite plenamente el workaround manual: editar directamente `.pi-auto-compaction-settings.json` o definir variables de entorno `PI_AUTO_COMPACTION_*`, seguido de `/reload` y verificación con `npm run doctor`.
 
 ### Diagnóstico con `doctor`
 

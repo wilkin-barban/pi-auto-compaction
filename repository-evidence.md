@@ -489,3 +489,55 @@ Commits de la tanda: `aabfce3` políticas+manifiesto v2, `4071c13` tests de migr
 Límite de la integración gráfica: Pi 1.5.0 y gentle-pi 4.6.0 no exponen `registerSettings` ni un hook para agregar filas a la página Extensions o a `/gentle:customize`. La integración soportada es el comando `/compaction` más el estado `pi-auto-compaction-model` en el footer; no se parchearon productos instalados.
 
 Disciplina TDD: T1 y T2 observaron RED antes de GREEN. T3 observó RED por un fixture propio (`settings.json` rechazado por el guard) y se corrigió el fixture, no el guard. T4 y A4 se escribieron después del código y se reportan como GREEN sin RED observado.
+
+## Verificación del release 1.2.1 — selector con scroll y búsqueda (2026-11-06)
+
+| Comprobación | Comando | Resultado |
+|---|---|---|
+| Suite completa | `npm test` | `# tests 322`, `# suites 31`, `# pass 322`, `# fail 0` |
+| Selector de modelos | `node --test test/unit/model-selector.test.mjs` | 17/17: exports de primitivas de TUI, filtro incremental determinista, formateo de items y labels descriptivos, cálculo de `maxVisible` según filas de terminal, render acotado de 100+ modelos con scroll info, búsqueda en vivo y `"Sin coincidencias"`, preselección por valor actual, navegación por flechas, cancelación por Escape, aplicación de temas y fallback de host |
+| Integración en `/compaction` | `node --test test/unit/compaction-command.test.mjs` | 17/17: selector interactivo en TUI con preselección de primario y respaldo, guardado con selector custom, fallback a `ui.select` en entornos sin UI personalizada y validaciones completas |
+
+### Commits de la tanda
+
+- `07af316`: `test: isolate suites from the real agent settings` (aislamiento de suites frente a configuraciones reales del desarrollador en `$HOME/.pi/agent` mediante `test/env-isolation.mjs`).
+- `331c74c`: `feat(ui): add a scrollable searchable model picker` (selector interactivo con `SelectList` de `@earendil-works/pi-tui`, viewport acotado según filas de terminal, búsqueda incremental y navegación por teclado/rueda).
+- `f843bf2`: `feat(compaction): use the scrollable picker in /compaction` (integración del selector interactivo en `/compaction` con preselección de primario y respaldo, y fallback a `ui.select`).
+
+### Cobertura detallada de `test/unit/model-selector.test.mjs` (17/17 pruebas)
+
+1. `@earendil-works/pi-tui exports the picker primitives`:
+   - `provides SelectList, Input and fuzzyFilter`
+2. `filterModels`:
+   - `returns every model for an empty or blank query`
+   - `matches by provider, model id and name, case-insensitively`
+   - `returns an empty list when nothing matches`
+3. `modelItems`:
+   - `builds provider/id values ordered by key with descriptive labels`
+   - `keeps provider/id for models keyed by modelId`
+4. `maxVisibleForRows`:
+   - `reserves rows for the header, input and hint`
+   - `never exceeds the number of models and never drops below five`
+5. `createModelPicker`:
+   - `renders a bounded viewport for 100+ models and shows scroll progress`
+   - `narrows the list while typing and reports no matches`
+   - `preselects the current model and returns it on Enter`
+   - `moves the selection with arrows and returns the new model`
+   - `cancels with Escape without a selection`
+   - `themes the header, scroll info and hints`
+6. `pickModel`:
+   - `opens the custom picker and resolves the selected model`
+   - `returns undefined when the host has no custom UI`
+   - `returns undefined on cancel`
+
+### Integridad de despliegue y resolución de dependencias
+
+El release desplegado conserva intacta su allowlist de importación en `scripts/deploy.mjs` debido a que `@earendil-works/pi-tui` no se añade como dependencia de producción ni se importa mediante un import estático descubierto en los scripts desplegados. En su lugar, se resuelve limpiamente en tiempo de ejecución a través de `loadPiTUI` en `src/pi-sdk.mjs`, localizándolo de forma relativa al SDK de Pi seleccionado (`loadPiSDK`), idéntico al mecanismo empleado para `@earendil-works/pi-ai`.
+
+### Disciplina TDD
+
+Esta unidad observó evidencia RED antes de GREEN:
+- **RED inicial**: Se observaron fallos previos a la implementación por `fuzzyFilter is not defined` e `Input is not a constructor` al importar y consumir las primitivas de `@earendil-works/pi-tui`.
+- **RED en empaquetado/despliegue**: Se observó rechazo de la allowlist de despliegue (`deploy allowlist rejection`) al intentar validar importaciones estáticas directas hacia módulos de TUI.
+- **Causa raíz aislada**: Durante la ejecución de suites completas se descubrió una fuga de configuración del desarrollador (la presencia de `.pi-auto-compaction-settings.json` en `$HOME/.pi/agent` en máquinas que habían corrido `/compaction` alteraba los supuestos de tests unitarios de `doctor` y `summarizer-settings`). Se resolvió con `test/env-isolation.mjs` cargado vía `node --import ./test/env-isolation.mjs --test`.
+- **GREEN**: Se alcanzó tras implementar el selector desacoplado, la resolución dinámica en `loadPiTUI`, el bootstrap de aislamiento de entorno y la integración en `/compaction`. Suite completa aprobada con 322 pruebas en 31 suites (`# pass 322`, `# fail 0`).
