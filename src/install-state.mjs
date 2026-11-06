@@ -21,6 +21,11 @@ export const LOCK_FILENAME = ".pi-auto-compaction.lock";
 export const JOURNAL_FILENAME = "recovery-journal.json";
 export const EXPECTED_MANIFEST_VERSION = "1.0.0";
 
+export const RECEIPT_KIND = "pi-auto-compaction-setup-receipt";
+export const RECEIPT_VERSION = 1;
+export const RECEIPT_DELIMITER_START = "---PI_AUTO_COMPACTION_SETUP_RECEIPT_START---";
+export const RECEIPT_DELIMITER_END = "---PI_AUTO_COMPACTION_SETUP_RECEIPT_END---";
+
 export function isPlainObject(val) {
   return typeof val === "object" && val !== null && !Array.isArray(val);
 }
@@ -311,3 +316,178 @@ export function checkDriftOnRollback(currentSettings, manifest, loaderPath) {
     }
   }
 }
+
+export function expectedLoaderContent(packageSourceDir) {
+  const entrySpecifier = JSON.stringify(path.join(packageSourceDir, "index.mjs"));
+  return `// Managed loader for pi-auto-compaction
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default async function (pi: ExtensionAPI) {
+  try {
+    const ext = await import(${entrySpecifier});
+    const factory = ext.default || ext.autoCompactionExtension;
+    if (typeof factory === "function") {
+      factory(pi);
+    }
+  } catch (err) {
+    console.error("[pi-auto-compaction] Failed to load durable extension:", err);
+  }
+}
+`;
+}
+
+export function applyManagedSettings(existingSettings = {}) {
+  const currentCompaction = existingSettings.compaction || {};
+  const currentOverrides = currentCompaction.modelOverrides || {};
+  const updatedOverrides = { ...currentOverrides };
+  for (const modelId of MANAGED_MODELS) {
+    const existingModelObj = updatedOverrides[modelId] || {};
+    updatedOverrides[modelId] = {
+      ...existingModelObj,
+      ...EXPECTED_MANAGED_VALUES,
+    };
+  }
+  return {
+    ...existingSettings,
+    compaction: {
+      ...currentCompaction,
+      modelOverrides: updatedOverrides,
+    },
+  };
+}
+
+export function buildManifest({
+  installedAt,
+  packageSourceDir,
+  originalOverrides,
+  loaderPath,
+  loaderHash,
+}) {
+  return {
+    version: EXPECTED_MANIFEST_VERSION,
+    installedAt,
+    packageSourceDir,
+    managedModels: [...MANAGED_MODELS],
+    expectedManagedValues: { ...EXPECTED_MANAGED_VALUES },
+    originalOverrides,
+    loaderPath,
+    loaderHash,
+  };
+}
+
+export function createSetupReceipt({
+  nonce,
+  targetDir,
+  packageSourceDir,
+  installedAt,
+  manifestHash,
+  loaderHash,
+  settingsHash,
+}) {
+  return {
+    installedAt,
+    kind: RECEIPT_KIND,
+    loaderHash,
+    manifestHash,
+    nonce,
+    packageSourceDir,
+    settingsHash,
+    targetDir,
+    version: RECEIPT_VERSION,
+  };
+}
+
+export function formatSetupReceipt(receipt) {
+  return `${RECEIPT_DELIMITER_START}\n${JSON.stringify(receipt)}\n${RECEIPT_DELIMITER_END}\n`;
+}
+
+export function parseAndValidateReceipt(stdout, expected = {}) {
+  if (typeof stdout !== "string") return null;
+  const startIndex = stdout.indexOf(RECEIPT_DELIMITER_START);
+  const endIndex = stdout.indexOf(RECEIPT_DELIMITER_END);
+
+  if (startIndex === -1 && endIndex === -1) {
+    return null;
+  }
+
+  const secondStart = stdout.indexOf(RECEIPT_DELIMITER_START, startIndex + RECEIPT_DELIMITER_START.length);
+  const secondEnd = stdout.indexOf(RECEIPT_DELIMITER_END, endIndex + RECEIPT_DELIMITER_END.length);
+  if (secondStart !== -1 || secondEnd !== -1) {
+    throw new Error("Duplicate setup receipt detected in child output");
+  }
+
+  if (startIndex === -1 || endIndex === -1 || startIndex >= endIndex) {
+    throw new Error("Malformed setup receipt delimiters in child output");
+  }
+
+  const rawJson = stdout.slice(startIndex + RECEIPT_DELIMITER_START.length, endIndex).trim();
+  let parsed;
+  try {
+    parsed = JSON.parse(rawJson);
+  } catch (err) {
+    throw new Error(`Corrupt setup receipt JSON in child output: ${err.message}`);
+  }
+
+  if (!isPlainObject(parsed)) {
+    throw new Error("Invalid setup receipt: root must be a non-null object");
+  }
+
+  const expectedKeys = [
+    "installedAt",
+    "kind",
+    "loaderHash",
+    "manifestHash",
+    "nonce",
+    "packageSourceDir",
+    "settingsHash",
+    "targetDir",
+    "version",
+  ];
+  const actualKeys = Object.keys(parsed).sort();
+  if (actualKeys.join(",") !== expectedKeys.join(",")) {
+    throw new Error(
+      `Invalid setup receipt schema: expected keys [${expectedKeys.join(",")}], got [${actualKeys.join(",")}]`,
+    );
+  }
+
+  if (parsed.kind !== RECEIPT_KIND) {
+    throw new Error(`Invalid setup receipt kind: ${parsed.kind}`);
+  }
+  if (parsed.version !== RECEIPT_VERSION) {
+    throw new Error(`Invalid setup receipt version: ${parsed.version}`);
+  }
+  if (typeof parsed.nonce !== "string" || !parsed.nonce) {
+    throw new Error("Invalid setup receipt nonce");
+  }
+  if (expected.nonce && parsed.nonce !== expected.nonce) {
+    throw new Error(`Setup receipt nonce mismatch: expected ${expected.nonce}, got ${parsed.nonce}`);
+  }
+  if (typeof parsed.targetDir !== "string" || !parsed.targetDir) {
+    throw new Error("Invalid setup receipt targetDir");
+  }
+  if (expected.targetDir && path.resolve(parsed.targetDir) !== path.resolve(expected.targetDir)) {
+    throw new Error(`Setup receipt targetDir mismatch: expected ${expected.targetDir}, got ${parsed.targetDir}`);
+  }
+  if (typeof parsed.packageSourceDir !== "string" || !parsed.packageSourceDir) {
+    throw new Error("Invalid setup receipt packageSourceDir");
+  }
+  if (expected.packageSourceDir && path.resolve(parsed.packageSourceDir) !== path.resolve(expected.packageSourceDir)) {
+    throw new Error(
+      `Setup receipt packageSourceDir mismatch: expected ${expected.packageSourceDir}, got ${parsed.packageSourceDir}`,
+    );
+  }
+  if (
+    typeof parsed.installedAt !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(parsed.installedAt)
+  ) {
+    throw new Error("Invalid setup receipt installedAt format (must be strict ISO 8601 with Z)");
+  }
+  for (const hashField of ["manifestHash", "loaderHash", "settingsHash"]) {
+    if (typeof parsed[hashField] !== "string" || !/^[0-9a-f]{64}$/.test(parsed[hashField])) {
+      throw new Error(`Invalid setup receipt ${hashField}: must be 64-character lowercase hex`);
+    }
+  }
+
+  return parsed;
+}
+
