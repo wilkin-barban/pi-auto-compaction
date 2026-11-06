@@ -12,6 +12,3 @@ contact_links:
   - name: Security policy
     url: https://github.com/wilkinbarban/pi-auto-compaction/blob/main/SECURITY.md
     about: Report vulnerabilities privately. Never open a public issue for a security problem.
-  - name: Discussions
-    url: https://github.com/wilkinbarban/pi-auto-compaction/discussions
-    about: Questions about setup, models or integration with Pi and gentle-shell.

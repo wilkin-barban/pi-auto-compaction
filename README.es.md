@@ -261,4 +261,4 @@ Este repositorio y sus archivos de configuración **nunca almacenan credenciales
 - [**Política de Seguridad**](SECURITY.md): Procedimiento de reporte de vulnerabilidades y garantías de privacidad.
 - [**Guía de Contribución**](CONTRIBUTING.es.md) / [English version](CONTRIBUTING.md): flujo fork/PR, disciplina TDD, tests, documentación y licencia de las contribuciones.
 - [**Código de Conducta**](CODE_OF_CONDUCT.es.md) / [Code of Conduct](CODE_OF_CONDUCT.md): estándares de la comunidad y reporte privado.
-- [**Plantilla de pull request**](.github/PULL_REQUEST_TEMPLATE.md) y [plantillas de issues](.github/ISSUE_TEMPLATE/config.yml): qué contiene una contribución revisable.
+- [**Plantilla de pull request**](.github/PULL_REQUEST_TEMPLATE.md) y [plantillas de issues](.github/ISSUE_TEMPLATE/): qué contiene una contribución revisable.

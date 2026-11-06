@@ -87,7 +87,7 @@ Los contribuyentes externos abren pull requests; solo los mantenedores y los age
 
 - Traducciones entre inglés y español.
 - Tests para ramas sin cobertura y mensajes de error.
-- Correcciones de documentación: enlaces roscos, conteos viejos, pasos confusos.
+- Correcciones de documentación: enlaces rotos, conteos viejos, pasos confusos.
 - Mejoras en la salida de `doctor` y mensajes de error más claros.
 - Soporte de modelos locales y documentación de proveedores.
 
