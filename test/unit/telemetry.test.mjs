@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { TelemetryLogger } from "../../src/telemetry.mjs";
+import { resolveConversationContext } from "../../src/extension.mjs";
 
 describe("telemetry module", () => {
   let tempDir;
@@ -223,5 +224,237 @@ describe("telemetry module", () => {
         tokensBefore: 200000,
       });
     });
+  });
+
+  it("allowlist rejects an unlisted key", () => {
+    const logger = new TelemetryLogger({ telemetryPath: telemetryFile });
+    logger.writeRecord({
+      sessionId: "sess-allowlist",
+      reason: "threshold",
+      model: "omniroute/antigravity/gemini-3.8-flash-tiered",
+      unlistedKey: "should-be-rejected",
+      tokensAfter: 50000,
+      apiKey: "sk-secret-key",
+      conversationModel: "deepseek-v4.1-flash",
+    });
+
+    const lines = fs.readFileSync(telemetryFile, "utf-8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    const entry = JSON.parse(lines[0]);
+    assert.equal(entry.unlistedKey, undefined);
+    assert.equal(entry.tokensAfter, undefined);
+    assert.equal(entry.apiKey, undefined);
+    assert.equal(entry.conversationModel, "deepseek-v4.1-flash");
+  });
+
+  it("a record with the six fields round-trips", () => {
+    const logger = new TelemetryLogger({ telemetryPath: telemetryFile });
+    logger.recordTerminalSuccess({
+      sessionId: "sess-roundtrip",
+      reason: "threshold",
+      model: "omniroute/antigravity/gemini-3.8-flash-tiered",
+      durationMs: 1400,
+      tokensBefore: 870000,
+      conversationModel: "deepseek-v4.1-flash",
+      conversationProvider: "deepseek",
+      contextWindow: 1000000,
+      reserveTokens: 140000,
+      keepRecentTokens: 20000,
+      thresholdTokens: 860000,
+    });
+
+    const lines = fs.readFileSync(telemetryFile, "utf-8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    const entry = JSON.parse(lines[0]);
+
+    assert.equal(entry.sessionId, "sess-roundtrip");
+    assert.equal(entry.status, "success");
+    assert.equal(entry.model, "omniroute/antigravity/gemini-3.8-flash-tiered");
+    assert.equal(entry.conversationModel, "deepseek-v4.1-flash");
+    assert.equal(entry.conversationProvider, "deepseek");
+    assert.equal(entry.contextWindow, 1000000);
+    assert.equal(entry.reserveTokens, 140000);
+    assert.equal(entry.keepRecentTokens, 20000);
+    assert.equal(entry.thresholdTokens, 860000);
+    assert.equal(typeof entry.contextWindow, "number");
+    assert.equal(typeof entry.reserveTokens, "number");
+    assert.equal(typeof entry.keepRecentTokens, "number");
+    assert.equal(typeof entry.thresholdTokens, "number");
+    assert.ok(Number.isInteger(entry.contextWindow));
+    assert.ok(Number.isInteger(entry.reserveTokens));
+    assert.ok(Number.isInteger(entry.keepRecentTokens));
+    assert.ok(Number.isInteger(entry.thresholdTokens));
+  });
+
+  it("each resolver branch (model override, global setting, Pi default) produces the expected reserveTokens/thresholdTokens", () => {
+    const model = { provider: "openai", id: "gpt-6-sol", contextWindow: 272000 };
+
+    // Branch 1: model override
+    const overrideSettings = {
+      compaction: {
+        reserveTokens: 50000,
+        keepRecentTokens: 10000,
+        modelOverrides: {
+          "openai/gpt-6-sol": {
+            reserveTokens: 65536,
+            keepRecentTokens: 20000,
+          },
+        },
+      },
+    };
+    const ctxOverride = { model };
+    const resOverride = resolveConversationContext(ctxOverride, { settings: overrideSettings });
+    assert.equal(resOverride.conversationProvider, "openai");
+    assert.equal(resOverride.conversationModel, "gpt-6-sol");
+    assert.equal(resOverride.contextWindow, 272000);
+    assert.equal(resOverride.reserveTokens, 65536);
+    assert.equal(resOverride.keepRecentTokens, 20000);
+    assert.equal(resOverride.thresholdTokens, 272000 - 65536); // 206464
+
+    // Branch 2: global setting (no model override)
+    const globalSettings = {
+      compaction: {
+        reserveTokens: 40000,
+        keepRecentTokens: 15000,
+      },
+    };
+    const ctxGlobal = { model };
+    const resGlobal = resolveConversationContext(ctxGlobal, { settings: globalSettings });
+    assert.equal(resGlobal.conversationProvider, "openai");
+    assert.equal(resGlobal.conversationModel, "gpt-6-sol");
+    assert.equal(resGlobal.contextWindow, 272000);
+    assert.equal(resGlobal.reserveTokens, 40000);
+    assert.equal(resGlobal.keepRecentTokens, 15000);
+    assert.equal(resGlobal.thresholdTokens, 272000 - 40000); // 232000
+
+    // Branch 3: Pi defaults (16384 / 20000) when settings are empty
+    const defaultSettings = {};
+    const ctxDefault = { model };
+    const resDefault = resolveConversationContext(ctxDefault, { settings: defaultSettings });
+    assert.equal(resDefault.conversationProvider, "openai");
+    assert.equal(resDefault.conversationModel, "gpt-6-sol");
+    assert.equal(resDefault.contextWindow, 272000);
+    assert.equal(resDefault.reserveTokens, 16384);
+    assert.equal(resDefault.keepRecentTokens, 20000);
+    assert.equal(resDefault.thresholdTokens, 272000 - 16384); // 255616
+  });
+
+  it("DeepSeek-shaped input with contextWindow 1000000 and reserveTokens 140000 yields thresholdTokens 860000", () => {
+    const ctx = {
+      model: {
+        provider: "deepseek",
+        id: "deepseek-v4.1-flash",
+        contextWindow: 1000000,
+      },
+    };
+    const settings = {
+      compaction: {
+        modelOverrides: {
+          "deepseek/deepseek-v4.1-flash": {
+            reserveTokens: 140000,
+            keepRecentTokens: 20000,
+          },
+        },
+      },
+    };
+    const resolved = resolveConversationContext(ctx, { settings });
+    assert.equal(resolved.conversationProvider, "deepseek");
+    assert.equal(resolved.conversationModel, "deepseek-v4.1-flash");
+    assert.equal(resolved.contextWindow, 1000000);
+    assert.equal(resolved.reserveTokens, 140000);
+    assert.equal(resolved.keepRecentTokens, 20000);
+    assert.equal(resolved.thresholdTokens, 860000);
+  });
+
+  it("unresolvable context omits fields without throwing", () => {
+    // Case 1: null / missing ctx or ctx.model
+    assert.doesNotThrow(() => {
+      const res1 = resolveConversationContext(null);
+      assert.deepEqual(res1, {});
+
+      const res2 = resolveConversationContext({});
+      assert.deepEqual(res2, {});
+
+      const res3 = resolveConversationContext({ model: null });
+      assert.deepEqual(res3, {});
+    });
+
+    // Case 2: missing contextWindow
+    assert.doesNotThrow(() => {
+      const res = resolveConversationContext(
+        { model: { provider: "deepseek", id: "deepseek-chat" } },
+        { settings: { compaction: { reserveTokens: 10000 } } },
+      );
+      assert.equal(res.conversationProvider, "deepseek");
+      assert.equal(res.conversationModel, "deepseek-chat");
+      assert.equal(res.contextWindow, undefined);
+      assert.equal(res.thresholdTokens, undefined);
+      assert.equal(res.reserveTokens, 10000);
+      assert.ok(!("contextWindow" in res) || res.contextWindow !== null);
+      assert.ok(!("thresholdTokens" in res) || res.thresholdTokens !== null);
+    });
+
+    // Case 3: unreadable settings (settings: null)
+    assert.doesNotThrow(() => {
+      const res = resolveConversationContext(
+        { model: { provider: "deepseek", id: "deepseek-chat", contextWindow: 500000 } },
+        { settings: null },
+      );
+      assert.equal(res.conversationProvider, "deepseek");
+      assert.equal(res.conversationModel, "deepseek-chat");
+      assert.equal(res.contextWindow, 500000);
+      assert.equal(res.reserveTokens, undefined);
+      assert.equal(res.keepRecentTokens, undefined);
+      assert.equal(res.thresholdTokens, undefined);
+    });
+
+    // Case 4: unreadable settings file on disk
+    const corruptSettingsPath = path.join(tempDir, "corrupt-settings.json");
+    fs.writeFileSync(corruptSettingsPath, "{ corrupt json syntax !!");
+    assert.doesNotThrow(() => {
+      const res = resolveConversationContext(
+        { model: { provider: "deepseek", id: "deepseek-chat", contextWindow: 500000 } },
+        { settingsPath: corruptSettingsPath },
+      );
+      assert.equal(res.conversationProvider, "deepseek");
+      assert.equal(res.conversationModel, "deepseek-chat");
+      assert.equal(res.contextWindow, 500000);
+      assert.equal(res.reserveTokens, undefined);
+      assert.equal(res.keepRecentTokens, undefined);
+      assert.equal(res.thresholdTokens, undefined);
+    });
+  });
+
+  it("a legacy record line stays untouched/readable", () => {
+    const legacyLine = JSON.stringify({
+      timestamp: "2026-11-06T10:00:00.000Z",
+      sessionId: "sess-legacy-999",
+      reason: "threshold",
+      model: "omniroute/antigravity/gemini-3.8-flash-tiered",
+      status: "success",
+      durationMs: 1200,
+      tokensBefore: 210000,
+      attemptCount: 1,
+    });
+
+    fs.mkdirSync(path.dirname(telemetryFile), { recursive: true });
+    fs.appendFileSync(telemetryFile, `${legacyLine}\n`);
+
+    // Prove reading legacy lines works and no reader throws
+    const lines = fs.readFileSync(telemetryFile, "utf-8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    let parsed;
+    assert.doesNotThrow(() => {
+      parsed = JSON.parse(lines[0]);
+    });
+    assert.equal(parsed.sessionId, "sess-legacy-999");
+    assert.equal(parsed.model, "omniroute/antigravity/gemini-3.8-flash-tiered");
+    assert.equal(parsed.tokensBefore, 210000);
+    assert.equal(parsed.conversationModel, undefined);
+    assert.equal(parsed.conversationProvider, undefined);
+    assert.equal(parsed.contextWindow, undefined);
+    assert.equal(parsed.reserveTokens, undefined);
+    assert.equal(parsed.keepRecentTokens, undefined);
+    assert.equal(parsed.thresholdTokens, undefined);
   });
 });
