@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRuntimeConfig } from "./runtime-config.mjs";
+import { publishModelStatus, registerCompactionCommand } from "./compaction-command.mjs";
 import { TelemetryLogger } from "./telemetry.mjs";
 import { UiManager } from "./ui-manager.mjs";
 import { classifyError } from "./errors.mjs";
@@ -139,6 +140,15 @@ export function autoCompactionExtension(pi, options = {}) {
   const telemetry = new TelemetryLogger(runtime.get());
   let activeUi = null;
   let activeCycle = null;
+
+  registerCompactionCommand(pi, runtime);
+
+  pi.on("session_start", (_event, ctx) => {
+    if (!ctx?.hasUI) {
+      return;
+    }
+    publishModelStatus(ctx.ui, runtime.get());
+  });
 
   pi.on("session_before_compact", async (event, ctx) => {
     // Snapshot the live configuration so a mid-cycle update never mixes models.

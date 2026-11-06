@@ -42,7 +42,7 @@ Validación estricta (`version === 1`, `provider`/`modelId` strings no vacíos, 
 
 - T1 — S1 store + tests. Writer/worker. Commit propio. **Hecho**: `src/summarizer-settings.mjs` + 39 tests; `DEFAULT_EFFECTIVE_SUMMARIZER` replica los modelos de `DEFAULT_CONFIG`; `resolveSummarizerSettings` expone `primaryModel`/`fallbackModel` congelados y `sources` por slot.
 - T2 — S2 integración en `config.mjs`/`extension.mjs` + tests de precedencia y caliente. Inline. Commit propio. **Hecho**: `src/config.mjs` (`resolveActiveConfig`), `src/runtime-config.mjs`, `src/extension.mjs` con snapshot por ciclo.
-- T3 — S3 comando `/compaction` + TUI + status + tests. Inline. Commit propio.
+- T3 — S3 comando `/compaction` + TUI + status + tests. Inline. Commit propio. **Hecho**: `src/compaction-command.mjs`, registro y `session_start` en `src/extension.mjs`.
 - T4 — S4 sección de resumidor en `doctor` + tests. Writer. Commit propio.
 - T5 — S5 docs, CHANGELOG 1.2.0, bump y evidencia. Inline. Commit propio.
 - T6 — S6 suite, smoke, push, CI y deploy live. Inline. Cierre.
@@ -62,7 +62,8 @@ Validación estricta (`version === 1`, `provider`/`modelId` strings no vacíos, 
 
 - **T1 (store)**: RED `node --test test/unit/summarizer-settings.test.mjs` → `ERR_MODULE_NOT_FOUND` del módulo; GREEN 39/39 en ese archivo. Suite completa: **271/271 en 20 suites** (baseline 232 + 39). Cubre archivo ausente/válido/corrupto, versión y claves inválidas, escritura atómica sin residuos, modos 0600/0700, rechazo de symlink, `settings.json` intacto, cadena de precedencia completa, par de env incompleto y defaults inmutables.
 - **T2 (en caliente)**: RED `node --test test/unit/runtime-config.test.mjs` → 2 fallos por el guard de `settings.json` en el fixture (el fixture se corrigió, no el guard). GREEN 8/8 en ese archivo; suite completa **279/279 en 22 suites**. `resolveConfig` sigue puro (sin I/O); `resolveActiveConfig` es el único resolutor que lee el archivo y expone `summarizer.path/source/sources/warnings`; `createRuntimeConfig` sólo cambia la config viva después de una escritura exitosa.
-- Pendiente: T3–T6.
+- **T3 (comando/TUI)**: RED/GREEN en `test/unit/compaction-command.test.mjs` (15/15): registro con la descripción exacta, labels `provider/id · nombre · ctx 1.048.576 · max 65.536`, orden `provider/id`, fallback de catálogo con `hasConfiguredAuth`, guardado + status `pi-auto-compaction-model`, cancelación en primario y en confirmación, mismo modelo rechazado, contexto chico avisado, sin modelos, no-TUI y fallo de escritura. Suite completa **294/294 en 24 suites**. Status publicado además en `session_start`.
+- Pendiente: T4–T6.
 
 ## Log
 
