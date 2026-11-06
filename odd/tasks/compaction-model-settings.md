@@ -66,7 +66,8 @@ Validación estricta (`version === 1`, `provider`/`modelId` strings no vacíos, 
 - **A4 (end-to-end)**: `test/integration/extension-lifecycle.test.mjs` 10/10; el ciclo lee el archivo de settings, publica `Compaction: chosen/chosen-model` en `session_start` y llama al resumidor con el modelo elegido sin `/reload`. Escrito después del código: GREEN sin RED observado.
 - **T4 (doctor)**: `test/unit/doctor.test.mjs` 20/20 con sección `summarizer` (ruta, existencia, validez, origen, catálogo, `contextWindow`/`maxTokens`, warnings por corrupción/ausente/contexto chico, `--json` lo incluye y el árbol queda intacto). Escrito después del código: GREEN sin RED observado; el bloque se insertó primero en el ámbito equivocado y se reportó con error de inicialización hasta reubicarlo.
 - **T5 (docs/release)**: README, `docs/instalacion.md`, `docs/mantenimiento.md`, `docs/arquitectura.md`, `docs/solucion-de-problemas.md`, CHANGELOG 1.2.0, bump de `package.json`, `repository-evidence.md`. Se corrigieron dos afirmaciones no verificadas (advertencia "en consola" y aviso de modelo ausente durante la compactación).
-- Suite completa final: **302/302 en 25 suites**.
+- Suite completa final: **302/302 en 25 suites**; `PI_COMPAT_VERSION=0.87.1 node scripts/compat/pi-1.5.0-smoke.mjs` 5/5.
+- **T6 (publicación)**: push `712ac54..7d41f65`; CI run `42237515713` verde en Node 22, Node 24 y Pi 1.5.0 smoke. Deploy live: dry-run OK y real OK, release `60712d39d252aa4b7d72b4f1c790672752b8e971bc7575fc161206529cb29741`, marker `ready`, loader apuntando a ese release, `doctor` HEALTHY exit 0 con sección de resumidor, journals solo `committed`, sin locks. `/reload` pendiente: sin él la sesión viva no ve `/compaction` ni el status. herdr sin cerrar.
 - Límite conocido: no hay API de settings por extensión en Pi 1.5.0 ni hook en `/gentle:customize`; la integración es `/compaction` + status. No se parcheó ningún producto instalado.
 
 ## Log
