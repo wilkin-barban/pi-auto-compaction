@@ -582,4 +582,63 @@ describe("extension-lifecycle integration", () => {
 
     assert.ok(result.compaction, "an unlisted provider keeps the OmniRoute summary");
   });
+  it("uses the saved summarizer settings on the next compaction without reload (A4)", async () => {
+    const { mockPi, mockCtx, handlers, uiStatuses } = createHarness();
+    const settingsPath = path.join(tempDir, ".pi-auto-compaction-settings.json");
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        version: 1,
+        primary: { provider: "chosen", modelId: "chosen-model" },
+        fallback: { provider: "backup", modelId: "backup-model" },
+      }),
+      { mode: 0o600 },
+    );
+
+    const seen = [];
+    mockCtx.modelRegistry.complete = async (model) => {
+      seen.push(`${model.provider}/${model.id}`);
+      return {
+        role: "assistant",
+        content: [{ type: "text", text: "## Goal\nSaved model\n## Progress\nDone" }],
+        stopReason: "stop",
+        usage: { inputTokens: 1000, outputTokens: 100 },
+      };
+    };
+
+    autoCompactionExtension(mockPi, {
+      telemetryPath: telemetryFile,
+      settingsPath,
+      agentDir: tempDir,
+      env: {},
+    });
+
+    handlers.get("session_start")({}, mockCtx);
+    assert.equal(uiStatuses.get("pi-auto-compaction-model"), "Compaction: chosen/chosen-model");
+
+    await handlers.get("session_before_compact")(
+      {
+        type: "session_before_compact",
+        preparation: {
+          firstKeptEntryId: "entry-7",
+          messagesToSummarize: [
+            { role: "user", content: [{ type: "text", text: "Pedido del usuario" }] },
+            { role: "assistant", content: [{ type: "text", text: "Respuesta" }] },
+          ],
+          turnPrefixMessages: [],
+          isSplitTurn: false,
+          tokensBefore: 1000,
+          previousSummary: null,
+          fileOps: [],
+        },
+        branchEntries: [],
+        customInstructions: "",
+        reason: "threshold",
+        willRetry: false,
+      },
+      mockCtx,
+    );
+
+    assert.deepEqual(seen, ["chosen/chosen-model"]);
+  });
 });
