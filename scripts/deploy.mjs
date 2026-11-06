@@ -93,41 +93,6 @@ function baselinesMatch(originalManifest, installedManifest) {
   }
   return false;
 }
-function isOwnManifest(liveManifest, targetPath, expectedLoaderPath, expectedOriginalOverrides, agentDir, setupStartTime) {
-  if (!liveManifest || typeof liveManifest !== "object" || Array.isArray(liveManifest)) return false;
-  try {
-    validateManifest(liveManifest, "manifest", expectedLoaderPath);
-  } catch {
-    return false;
-  }
-  if (liveManifest.packageSourceDir !== targetPath) return false;
-  if (liveManifest.loaderPath !== expectedLoaderPath) return false;
-  if (liveManifest.loaderHash !== hash(expectedLoader(targetPath))) return false;
-  if (expectedOriginalOverrides && !baselinesMatch({ originalOverrides: expectedOriginalOverrides, version: liveManifest.version }, liveManifest)) return false;
-  if (typeof liveManifest.installedAt !== "string" || isNaN(Date.parse(liveManifest.installedAt))) return false;
-
-  const parsedInstalledAt = Date.parse(liveManifest.installedAt);
-  if (parsedInstalledAt > Date.now()) return false;
-  if (setupStartTime && parsedInstalledAt < setupStartTime - 50) return false;
-
-  if (agentDir) {
-    const manifestPath = path.join(agentDir, MANIFEST_FILENAME);
-    if (exists(manifestPath)) {
-      const stat = fs.statSync(manifestPath);
-      if (parsedInstalledAt > stat.mtimeMs + 5 || Math.abs(stat.mtimeMs - parsedInstalledAt) > 100) return false;
-    }
-    const stateDir = path.join(agentDir, STATE_DIRNAME);
-    if (exists(stateDir)) {
-      const backups = fs.readdirSync(stateDir).filter((f) => /^settings\.bak\.\d+$/.test(f));
-      const matching = backups.map((f) => Number(f.slice("settings.bak.".length))).filter((ts) => ts >= (setupStartTime ? setupStartTime - 100 : 0));
-      if (matching.length > 0) {
-        const closest = Math.min(...matching.map((ts) => Math.abs(parsedInstalledAt - ts)));
-        if (closest > 50) return false;
-      }
-    }
-  }
-  return true;
-}
 function atomicJSON(file, value) {
   safePath(file);
   const temporary = `${file}.tmp.${crypto.randomUUID()}`;

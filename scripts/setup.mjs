@@ -7,6 +7,7 @@ import {
   MANIFEST_FILENAME,
   LOCK_FILENAME,
   JOURNAL_FILENAME,
+  STATE_DIRNAME,
   MANIFEST_VERSION_V1,
   MANIFEST_VERSION_V2,
   EXPECTED_MANIFEST_VERSION,
@@ -68,11 +69,12 @@ export function runSetup(options = {}) {
   const manifestFile = path.join(agentDir, MANIFEST_FILENAME);
   const loaderPath = path.join(extensionsDir, "omniroute-compaction.ts");
 
-  const stateDir = ensureStateDir(agentDir);
+  const stateDir = path.join(agentDir, STATE_DIRNAME);
   const journalPath = path.join(stateDir, JOURNAL_FILENAME);
 
   let lockPath = null;
   if (!dryRun) {
+    ensureStateDir(agentDir);
     lockPath = acquireLock(agentDir);
   }
 

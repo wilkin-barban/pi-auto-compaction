@@ -6,6 +6,7 @@ import {
   MANIFEST_FILENAME,
   LOCK_FILENAME,
   JOURNAL_FILENAME,
+  STATE_DIRNAME,
   isPlainObject,
   validateSettings,
   validateManifest,
@@ -35,11 +36,12 @@ export function runRollback(options = {}) {
   const manifestFile = path.join(agentDir, MANIFEST_FILENAME);
   const loaderPath = path.join(extensionsDir, "omniroute-compaction.ts");
 
-  const stateDir = ensureStateDir(agentDir);
+  const stateDir = path.join(agentDir, STATE_DIRNAME);
   const journalPath = path.join(stateDir, JOURNAL_FILENAME);
 
   let lockPath = null;
   if (!dryRun) {
+    ensureStateDir(agentDir);
     lockPath = acquireLock(agentDir);
   }
 

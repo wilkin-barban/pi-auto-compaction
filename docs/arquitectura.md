@@ -105,27 +105,25 @@ Si tanto el modelo principal como el de respaldo fallan, o si se agota el presup
 
 ## 4. Umbrales de activación y modelos soportados
 
-La extensión gestiona exactamente cuatro identificadores de modelo de conversación con ventanas de 272.000 tokens:
+La extensión gestiona ocho identificadores de modelo de conversación, agrupados por ventana de contexto. La política vive en `src/install-state.mjs` (`MANAGED_POLICIES`) y el manifiesto v2 la congela:
 
-1. `openai/gpt-6-sol`
-2. `openai/gpt-6.1-sol`
-3. `openai-codex/gpt-6-sol`
-4. `openai-codex/gpt-6.1-sol`
+| Modelos | Ventana | `reserveTokens` | `keepRecentTokens` | Dispara a |
+|---|---|---|---|---|
+| `openai/gpt-6-sol`, `openai/gpt-6.1-sol`, `openai-codex/gpt-6-sol`, `openai-codex/gpt-6.1-sol` | 400.000 | 65.536 | 20.000 | 334.464 (~83,6%) |
+| `commandcode/deepseek/deepseek-v4.1-flash`, `deepseek/deepseek-v4.1-flash` | 1.000.000 | 140.000 | 20.000 | 860.000 (86%) |
+| `omniroute/antigravity/gemini-3.8-flash-tiered`, `antigravity/gemini-3.8-flash-tiered` | 1.048.576 | 200.000 | 20.000 | 848.576 (~80,9%) |
 
 ### Cálculo de umbrales
 
-Al ejecutarse `setup.mjs`, se configuran en `settings.json` los siguientes valores para cada uno de los cuatro modelos:
+La fórmula de activación de Pi es:
 
-- `reserveTokens`: `65536`
-- `keepRecentTokens`: `20000`
+$$\text{Umbral de activación} = \text{Ventana Total} - \text{reserveTokens}$$
 
-En una ventana de contexto de **272.000 tokens**, la fórmula de activación de Pi es:
+Con la política DeepSeek (`1.000.000 - 140.000 = 860.000`) la compactación se dispara recién al **86%** de la capacidad. El caso histórico que motivó esta corrección fue un override externo de `860000` reservados sobre el mismo modelo: disparaba a 140.000 tokens, es decir al **14%**, y produjo 105 compactaciones prematuras en una sola sesión. `npm run doctor` reporta ese escenario como advertencia con el porcentaje exacto.
 
-$$\text{Umbral de activación} = \text{Ventana Total} - \text{reserveTokens} = 272.000 - 65.536 = 206.464 \text{ tokens}$$
+### Modelos no gestionados
 
-Esto representa exactamente un punto de disparo del **~76% de la capacidad**. En observaciones empíricas reales (por ejemplo, en la sesión de prueba *Trindade*), la compactación se activó al 76,17% de la capacidad y completó el resumen en 20,8 segundos (evidencia de log, sin constituir un compromiso de SLO formal).
-
-> **Soporte de nuevos modelos**: Si en el futuro se desea soportar identificadores adicionales, esto requiere modificar explícitamente la lista en `src/config.mjs`, actualizar las pruebas en `test/unit/config.test.mjs` y generar un nuevo release.
+Cualquier identificador fuera de la tabla no se modifica: conserva el override del usuario o, si no tiene, los defaults de Pi (`reserveTokens` 16.384, `keepRecentTokens` 20.000). Un override externo sobre un modelo gestionado se detecta como drift en setup/rollback, y `npm run doctor` lo advierte sin bloquear ni escribir. Para gestionar un modelo nuevo hay que agregarlo a `MANAGED_POLICIES` en `src/install-state.mjs`, actualizar las pruebas de `test/integration/install-state.test.mjs` y publicar un release.
 
 ---
 

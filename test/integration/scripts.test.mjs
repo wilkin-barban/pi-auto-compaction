@@ -60,6 +60,19 @@ describe("deployment scripts module", () => {
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
+  it("dry-run creates no state directory or lock for setup and rollback", () => {
+    const freshAgent = path.join(tempHome, "fresh-agent");
+    fs.mkdirSync(freshAgent, { recursive: true });
+    const stateDir = path.join(freshAgent, ".pi-auto-compaction-state");
+
+    runSetup({ agentDir: freshAgent, packageSourceDir: mockPkgSourceDir, dryRun: true });
+    assert.equal(fs.existsSync(stateDir), false, "setup dry-run must not create the state dir");
+
+    runRollback({ agentDir: freshAgent, dryRun: true });
+    assert.equal(fs.existsSync(stateDir), false, "rollback dry-run must not create the state dir");
+    assert.equal(fs.existsSync(path.join(freshAgent, ".pi-auto-compaction.lock")), false);
+  });
+
   function managedSnapshot() {
     return Object.fromEntries([
       settingsFile,
