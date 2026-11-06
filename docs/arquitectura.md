@@ -1,6 +1,6 @@
 # Arquitectura y Diseño Técnico
 
-Este documento describe la arquitectura interna de **pi-auto-compaction**, el ciclo de vida de los hooks en el SDK de Pi, el mecanismo de delegación de resúmenes hacia OmniRoute, la preservación de contexto y el modelo de telemetría.
+Este documento describe la arquitectura interna de **pi-auto-compaction**, el ciclo de vida de los hooks en el SDK de Pi, el mecanismo de delegación de resúmenes hacia el proveedor del resumidor configurado (OmniRoute por defecto), la preservación de contexto y el modelo de telemetría.
 
 ---
 
@@ -30,7 +30,7 @@ En una instalación estándar de Pi, la compactación de contexto utiliza el mis
                │  1. Bloqueo UI (herdr opcional)
                │  2. Construir prompt seguro  │
                │  3. Consultar Primary Model  │
-               │     (gemini-3.8-flash-tiered)│
+               │     (modelo configurado)     │
                │     [Timeout: 60s]           │
                └──────────────┬───────────────┘
                               │
@@ -41,7 +41,7 @@ En una instalación estándar de Pi, la compactación de contexto utiliza el mis
               Sí                             ▼
                │                ┌──────────────────────────────┐
                │                │   Reintento: Backup Model    │
-               │                │   (gemini-3.6-flash-high)    │
+               │                │   (modelo configurado)       │
                │                │   [Presupuesto total: 120s]  │
                │                └──────────────┬───────────────┘
                │                               │
@@ -75,9 +75,9 @@ Un detalle arquitectónico fundamental del SDK de Pi (`AgentSession._runAutoComp
 
 ---
 
-## 3. Resumidores de OmniRoute y política de fallback
+## 3. Resumidores configurables y política de fallback
 
-La extensión utiliza la API `ctx.modelRegistry.complete` para despachar la tarea de resumen a través de la pasarela de OmniRoute:
+La extensión utiliza la API `ctx.modelRegistry.complete` para despachar la tarea de resumen al provider del resumidor configurado. Por defecto usa la pasarela de OmniRoute:
 
 ### Modelos configurados
 
@@ -128,7 +128,7 @@ Con la política DeepSeek (`1.000.000 - 140.000 = 860.000`) la compactación se 
 
 Cualquier identificador fuera de la tabla no se modifica: conserva el override del usuario o, si no tiene, los defaults de Pi (`reserveTokens` 16.384, `keepRecentTokens` 20.000). Un override externo sobre un modelo gestionado se detecta como drift en setup/rollback, y `npm run doctor` lo advierte sin bloquear ni escribir. Para gestionar un modelo nuevo hay que agregarlo a `MANAGED_POLICIES` en `src/install-state.mjs`, actualizar las pruebas de `test/integration/install-state.test.mjs` y publicar un release.
 
-Para que un proveedor concreto use la compactación nativa de Pi sin pasar por OmniRoute, definí `PI_AUTO_COMPACTION_SKIP_PROVIDERS` (lista separada por comas, match exacto y sensible a mayúsculas) o pasá `skipProviders` al cargar la extensión. El loader gestionado usa la variable de entorno.
+Para que un proveedor concreto use la compactación nativa de Pi sin llamar al resumidor configurado, definí `PI_AUTO_COMPACTION_SKIP_PROVIDERS` (lista separada por comas, match exacto y sensible a mayúsculas) o pasá `skipProviders` al cargar la extensión. El loader gestionado usa la variable de entorno.
 
 ---
 
@@ -167,7 +167,7 @@ La extensión mantiene un registro de auditoría local para diagnosticar el comp
 - **Compatibilidad con registros previos**: Los registros generados por versiones anteriores de la extensión que carecen de estos seis campos permanecen válidos, legibles e intactos en el archivo de telemetría; ningún lector ni analizador falla al encontrarlos.
 - **Privacidad estricta**: No se almacenan transcripciones de mensajes, contenido de sesiones, claves de API, rutas personales de usuario ni `tokensAfter`. Únicamente se persisten los seis metadatos autorizados junto a las métricas del ciclo.
 - **Datos no registrados**: Se excluyen estrictamente las transcripciones completas de los mensajes, claves de API, variables de entorno y rutas completas del sistema de archivos.
-- **Claridad sobre transmisión de datos**: Para que los resumidores de OmniRoute puedan generar el resumen del contexto anterior, **el texto de los turnos antiguos de la conversación se transmite deliberadamente a la API de OmniRoute**. El cifrado en tránsito depende del protocolo del endpoint configurado (se recomienda enfáticamente HTTPS; la extensión no impone TLS a nivel de transporte). No debe afirmarse que ningún contenido conversacional abandona la máquina; lo que se garantiza es que la telemetría local persistida en disco no almacena transcripciones ni secretos.
+- **Claridad sobre transmisión de datos**: Para que los resumidores configurados puedan generar el resumen del contexto anterior, **el texto de los turnos antiguos de la conversación se transmite deliberadamente a la API del proveedor correspondiente (OmniRoute por defecto)**. El cifrado en tránsito depende del protocolo del endpoint configurado (se recomienda enfáticamente HTTPS; la extensión no impone TLS a nivel de transporte). No debe afirmarse que ningún contenido conversacional abandona la máquina; lo que se garantiza es que la telemetría local persistida en disco no almacena transcripciones ni secretos.
 
 ---
 
@@ -231,7 +231,7 @@ Para resolver este problema sin violar la integridad del sistema, la versión 1.
 2. **Cálculo de `maxVisible` derivado de las filas del terminal**: Para asegurar que el diálogo nunca desborde el terminal ni oculte elementos esenciales, la cantidad de elementos visibles se calcula mediante:
    $$\text{maxVisible} = \max\left(5, \min\left(\text{count}, (\text{terminal.rows} \mathbin{??} 24) - 10\right)\right)$$
    Este cálculo descuenta 10 filas para la cabecera del título, el campo de búsqueda `Input`, la línea inferior de atajos (`PICKER_HINTS`) y los márgenes verticales de seguridad, garantizando una ventana de al menos 5 filas incluso en terminales compactos.
-3. **Búsqueda incremental determinista (`filterModels`)**: Integra un campo `Input` en la parte superior. Al escribir, el selector aplica un filtro tokenizado equivalente a una búsqueda difusa (*fuzzy filter*):
+3. **Búsqueda incremental determinista (`filterModels`)**: Integra un campo `Input` en la parte superior. Al escribir, el selector aplica un filtro tokenizado determinista (todos los tokens deben aparecer como substring; no usa `fuzzyFilter`):
    - La consulta se normaliza a minúsculas y se divide en tokens separados por espacios o barras (`/`).
    - Cada modelo debe contener todos los tokens en su proveedor, identificador o nombre descriptivo.
    - Los resultados se ordenan deterministamente otorgando mayor prioridad a coincidencias exactas y coincidencias en la clave `provider/modelId` sobre coincidencias en el nombre descriptivo.

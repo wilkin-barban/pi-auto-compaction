@@ -17,6 +17,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 ### Documentación
 
 - Documentado el workaround manual de configuración mediante edición directa de `$PI_CODING_AGENT_DIR/.pi-auto-compaction-settings.json` o uso de variables de entorno `PI_AUTO_COMPACTION_*`, seguido de `/reload` y verificación con `doctor`.
+- Guías alineadas con el resumidor configurable (OmniRoute solo como valor por defecto), el conteo final de 326/33 y el filtro tokenizado real del selector.
 
 ---
 

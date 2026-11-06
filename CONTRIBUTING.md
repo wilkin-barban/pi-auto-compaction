@@ -48,7 +48,7 @@ El paquete interactúa estrechamente con las interfaces internas del SDK de Pi. 
      - `session_compact`
      - `session_compact_failed`
    - Verifique que la firma de `_getSummarizationRequestAuth` y la estructura de `CompactionResult` no hayan cambiado.
-   - Ejecute `npm test` y compruebe que la suite completa (referencia actual: 232 pruebas en 12 suites) apruebe al 100%.
+   - Ejecute `npm test` y compruebe que la suite completa (referencia actual: 326 pruebas en 33 suites) apruebe al 100%.
 
 ---
 

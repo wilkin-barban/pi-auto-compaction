@@ -13,7 +13,7 @@ Antes de proceder con la instalación, verifique que su entorno cumple los sigui
 | **Sistema Operativo** | Linux | Entorno validado. No se garantiza soporte formal en macOS o Windows nativo. |
 | **Node.js** | `>=22.19.0` | Requerido por el SDK de Pi y los temporizadores de prueba (`MockTimers`). Matriz de CI para Node 22 y 24; validado localmente en Node 22.23.2 con SDK 0.87.1 y smoke de Pi 1.5.0 en CI; se requiere Node >= 22.19 sin garantía para todas las versiones futuras no probadas. |
 | **Pi Coding Agent** | Instalación activa | Directorio de configuración por defecto: `$HOME/.pi/agent` (o variable `PI_CODING_AGENT_DIR`). En gentle-shell, el home de Pi es el mismo y el loader se instala en `extensions/omniroute-compaction.ts`. |
-| **Proveedor OmniRoute** | Configurado en Pi | Se requieren credenciales activas y acceso a los modelos de resumen definidos. |
+| **Proveedor del resumidor** | Configurado en Pi | Por defecto OmniRoute con `omniroute/antigravity/gemini-3.8-flash-tiered` y `omniroute/antigravity/gemini-3.6-flash-high`; si elegís otro modelo en `/compaction`, alcanza con que ese provider tenga credenciales y el modelo esté disponible. |
 | **Credenciales de conversación** | Activas en Pi | Credenciales válidas para el modelo de chat activo (OpenAI, DeepSeek/Command Code, Gemini, etc.) en `auth.json`, requeridas para validar autenticación previa al hook (la validación previa verifica credenciales de autenticación, no cuota universal del proveedor). |
 | **GitHub CLI / Git** | Autenticación privada | Acceso concedido al repositorio privado `https://github.com/wilkinbarban/pi-auto-compaction`. |
 
@@ -26,8 +26,8 @@ Antes de proceder con la instalación, verifique que su entorno cumple los sigui
 El código fuente de este paquete es estrictamente privado (`UNLICENSED`).
 
 - **Autenticación con GitHub**: Se realiza mediante `gh auth login` o claves SSH privadas asociadas a su cuenta de GitHub.
-- **Credenciales de IA y modelos**: Las claves de API de OmniRoute y del proveedor de conversación (OpenAI, DeepSeek/Command Code, Gemini, etc.) **nunca** deben residir en este repositorio ni copiarse en el árbol de trabajo. Permanecen bajo la gestión exclusiva de Pi en `$HOME/.pi/agent/auth.json`.
-- **Telemetría y estado**: La telemetría operativa se registra en `$HOME/.local/state/pi-auto-compaction/compaction.jsonl` (metadatos mínimos cuantificables únicamente, sin `tokensAfter` ni transcripciones; el contexto de conversación se transmite deliberadamente a la API de OmniRoute para generar el resumen). Los journals transaccionales de despliegue residen en `<install-dir>/journals/`, y el journal de recuperación de agente en `<agent-dir>/.pi-auto-compaction-state/recovery-journal.json`. La carpeta `~/.local/state/pi-auto-compaction` es exclusiva para telemetría.
+- **Credenciales de IA y modelos**: Las claves de API del proveedor del resumidor (OmniRoute por defecto) y del proveedor de conversación (OpenAI, DeepSeek/Command Code, Gemini, etc.) **nunca** deben residir en este repositorio ni copiarse en el árbol de trabajo. Permanecen bajo la gestión exclusiva de Pi en `$HOME/.pi/agent/auth.json`.
+- **Telemetría y estado**: La telemetría operativa se registra en `$HOME/.local/state/pi-auto-compaction/compaction.jsonl` (metadatos mínimos cuantificables únicamente, sin `tokensAfter` ni transcripciones; el contexto de conversación se transmite deliberadamente a la API del proveedor del resumidor configurado (OmniRoute por defecto) para generar el resumen). Los journals transaccionales de despliegue residen en `<install-dir>/journals/`, y el journal de recuperación de agente en `<agent-dir>/.pi-auto-compaction-state/recovery-journal.json`. La carpeta `~/.local/state/pi-auto-compaction` es exclusiva para telemetría.
 
 ---
 
@@ -74,7 +74,7 @@ npm ci --ignore-scripts
 npm test
 ```
 
-> **Verificación esperada**: La suite debe ejecutar y aprobar todas las pruebas unitarias y de integración sin fallos ni cancelaciones. La referencia actual es **232 pruebas en 12 suites**; el número exacto lo imprime `npm test` y también queda registrado en `repository-evidence.md`.
+> **Verificación esperada**: La suite debe ejecutar y aprobar todas las pruebas unitarias y de integración sin fallos ni cancelaciones. La referencia actual es **326 pruebas en 33 suites**; el número exacto lo imprime `npm test` y también queda registrado en `repository-evidence.md`.
 
 ### Paso 3: Simular el despliegue con `--dry-run`
 

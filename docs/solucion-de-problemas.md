@@ -24,13 +24,13 @@ En la arquitectura del SDK de Pi (`AgentSession._runAutoCompaction`), el sistema
 
 ---
 
-## 2. Fallo de ambos modelos de OmniRoute (Dual Fail) y caída al fallback nativo
+## 2. Fallo de ambos resumidores configurados (Dual Fail) y caída al fallback nativo
 
 ### Síntoma
-La compactación tarda más tiempo del habitual (cerca de 60–120 segundos) y en el registro de telemetría se observa que tanto el modelo principal (`gemini-3.8-flash-tiered`) como el de respaldo (`gemini-3.6-flash-high`) fallaron, produciendo una llamada al fallback nativo de Pi.
+La compactación tarda más tiempo del habitual (cerca de 60–120 segundos) y en el registro de telemetría se observa que tanto el modelo principal como el de respaldo configurados fallaron (por defecto `gemini-3.8-flash-tiered` y `gemini-3.6-flash-high`), produciendo una llamada al fallback nativo de Pi.
 
 ### Causa raíz
-Ambos modelos de resumen se sirven a través de la infraestructura de OmniRoute. Si la pasarela de OmniRoute experimenta indisponibilidad, saturación o corte de red, ambos intentos pueden agotar su tiempo de espera (60 s cada uno) o retornar error de servicio.
+Cada resumidor puede usar OmniRoute, un provider directo o un modelo local. Si ambos comparten una infraestructura que falla (por ejemplo, la pasarela de OmniRoute, un corte de red o un provider saturado), ambos intentos pueden agotar su tiempo de espera (60 s cada uno) o retornar error de servicio.
 
 ### Comportamiento del sistema
 La extensión retorna `undefined` a Pi para que este intente compactar usando su motor nativo (el modelo de conversación activo). Sin embargo, tenga en cuenta:
@@ -38,7 +38,7 @@ La extensión retorna `undefined` a Pi para que este intente compactar usando su
 - La extensión no genera fallos fatales no controlados; registra el evento en telemetría y cede el control limpiamente.
 
 ### Diagnóstico
-Revise las últimas entradas de telemetría para confirmar los códigos de error devueltos por OmniRoute:
+Revise las últimas entradas de telemetría para confirmar los códigos de error del resumidor/proveedor:
 ```bash
 tail -n 20 "$HOME/.local/state/pi-auto-compaction/compaction.jsonl"
 ```
@@ -214,7 +214,7 @@ El modelo fue guardado previamente en el archivo de settings, pero posteriorment
 
 ### Solución
 1. Ejecutá `/compaction` para seleccionar un modelo activo y disponible en el harness.
-2. Si deseás restaurar los modelos originales de OmniRoute, eliminá el archivo `.pi-auto-compaction-settings.json` o reconfigurá las credenciales del proveedor ausente en `auth.json`.
+2. Si deseás restaurar los defaults (OmniRoute), eliminá el archivo `.pi-auto-compaction-settings.json` o reconfigurá las credenciales del proveedor ausente en `auth.json`.
 
 ---
 
