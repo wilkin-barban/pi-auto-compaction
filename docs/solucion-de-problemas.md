@@ -203,7 +203,7 @@ El resolvedor de modelos (`listChatModels`) consulta dinámicamente `ctx.modelRe
 ## 8. Modelo de resumen configurado no encontrado en tiempo de ejecución
 
 ### Síntoma
-Durante el inicio de sesión o al dispararse una compactación, `doctor` o la consola advierten que el modelo primario o de respaldo configurado en `.pi-auto-compaction-settings.json` no se encuentra en el registro de modelos.
+`doctor` advierte que el modelo primario o de respaldo configurado en `.pi-auto-compaction-settings.json` no aparece en `models.json`, `models-store.json` ni `commandcode-models.json`. La compactación en sí no se rompe: si el registro no lo resuelve, se intenta el respaldo y, si ambos fallan, Pi vuelve a su compactación nativa.
 
 ### Causa raíz
 El modelo fue guardado previamente en el archivo de settings, pero posteriormente se desconfiguró el proveedor, se revocaron las credenciales en `auth.json`, o el modelo fue retirado de `models.json`.
