@@ -21,7 +21,31 @@ export const DEFAULT_CONFIG = Object.freeze({
   telemetryPath: path.join(os.homedir(), ".local", "state", "pi-auto-compaction", "compaction.jsonl"),
   telemetryMaxBytes: 1024 * 1024, // 1MB
   telemetryMaxFiles: 3,
+  // Conversation providers whose sessions must never be summarized through OmniRoute.
+  skipProviders: Object.freeze([]),
 });
+
+function resolveSkipProviders(options) {
+  const raw = options.skipProviders !== undefined
+    ? options.skipProviders
+    : (process.env.PI_AUTO_COMPACTION_SKIP_PROVIDERS || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+  if (!Array.isArray(raw)) {
+    throw new Error("skipProviders must be an array of provider ids");
+  }
+
+  const normalized = raw.map((value) => {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      throw new Error("skipProviders entries must be non-empty strings");
+    }
+    return value.trim();
+  });
+
+  return Object.freeze([...new Set(normalized)]);
+}
 
 export function resolveConfig(options = {}) {
   const merged = {
@@ -35,6 +59,7 @@ export function resolveConfig(options = {}) {
       ...DEFAULT_CONFIG.fallbackModel,
       ...(options.fallbackModel || {}),
     },
+    skipProviders: resolveSkipProviders(options),
   };
 
   // Validations

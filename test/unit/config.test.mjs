@@ -48,4 +48,35 @@ describe("config module", () => {
   it("validates and rejects invalid model structures", () => {
     assert.throws(() => resolveConfig({ primaryModel: { provider: "" } }), /Invalid primaryModel/);
   });
+
+  it("defaults to summarizing every conversation provider", () => {
+    assert.deepEqual(DEFAULT_CONFIG.skipProviders, []);
+    assert.deepEqual(resolveConfig({}).skipProviders, []);
+  });
+
+  it("accepts an explicit provider skip list without mutating the caller input", () => {
+    const input = ["deepseek", " commandcode "];
+    const resolved = resolveConfig({ skipProviders: input });
+
+    assert.deepEqual(resolved.skipProviders, ["deepseek", "commandcode"]);
+    assert.deepEqual(input, ["deepseek", " commandcode "]);
+  });
+
+  it("reads the provider skip list from the environment when no option is given", () => {
+    const previous = process.env.PI_AUTO_COMPACTION_SKIP_PROVIDERS;
+    process.env.PI_AUTO_COMPACTION_SKIP_PROVIDERS = "deepseek, antigravity ,";
+    try {
+      assert.deepEqual(resolveConfig({}).skipProviders, ["deepseek", "antigravity"]);
+      assert.deepEqual(resolveConfig({ skipProviders: [] }).skipProviders, []);
+    } finally {
+      if (previous === undefined) delete process.env.PI_AUTO_COMPACTION_SKIP_PROVIDERS;
+      else process.env.PI_AUTO_COMPACTION_SKIP_PROVIDERS = previous;
+    }
+  });
+
+  it("rejects an invalid provider skip list", () => {
+    assert.throws(() => resolveConfig({ skipProviders: "deepseek" }), /skipProviders must be an array/);
+    assert.throws(() => resolveConfig({ skipProviders: [""] }), /skipProviders entries must be non-empty strings/);
+    assert.throws(() => resolveConfig({ skipProviders: [42] }), /skipProviders entries must be non-empty strings/);
+  });
 });
