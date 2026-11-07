@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-24.04]
         node-version: [22, 24]
 
     steps:
@@ -40,7 +40,7 @@ jobs:
 
   compat-pi-1-5:
     name: Pi 1.5.0 compatibility smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
