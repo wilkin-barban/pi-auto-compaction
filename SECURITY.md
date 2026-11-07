@@ -46,3 +46,8 @@ Para minimizar cualquier riesgo de filtración de información:
 - El repositorio no almacena credenciales, tokens ni configuraciones de autenticación.
 - Todas las claves de API residen en los almacenes nativos de Pi (`$HOME/.pi/agent/auth.json`) con las protecciones de acceso estándar del sistema operativo.
 - Pi valida las credenciales de autenticación del modelo de conversación en `auth.json` antes de emitir los hooks de compactación. Los errores de credenciales previenen la invocación del hook, mientras que los errores de cuota o servicio de proveedores ocurren en fases posteriores.
+
+### Fixtures de prueba
+- Las cadenas con forma de credencial que aparecen en las pruebas —por ejemplo `sk-ant-api03-…`, `sk-ant-secret-12345` y `Bearer sensitive-token-99999`, junto con rutas de ejemplo como `/home/example/…`— son **fixtures sintéticos**, no secretos reales ni credenciales de nadie.
+- Existen únicamente para verificar que la redacción de errores (`sanitizeErrorMessage`) y la lista blanca de la telemetría descartan claves, tokens y rutas personales. Si un escaneo de seguridad las detecta, son falsos positivos esperados: ninguna otorga acceso a servicio alguno.
+- Los fixtures reales del repositorio no contienen credenciales válidas; cualquier valor con forma sospechosa que no sea sintético debe reportarse por el canal privado de la sección 2.

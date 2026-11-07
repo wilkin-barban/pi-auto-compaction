@@ -164,7 +164,10 @@ describe("telemetry module", () => {
         cacheWrite: 0,
         reasoning: 150,
         totalTokens: 52950,
-        // Hostile / sensitive fields that must be stripped:
+        // Hostile / sensitive fields that must be stripped. Every credential-shaped
+        // value below is a synthetic fixture, not a real secret: `sk-ant-secret-12345`
+        // and `Bearer sensitive-token-99999` exist only to prove that the allowlist and
+        // the redaction drop them. See SECURITY.md, "Fixtures de prueba".
         secretKey: "sk-ant-secret-12345",
         authorization: "Bearer sensitive-token-99999",
         nested: {

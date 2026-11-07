@@ -51,6 +51,10 @@ describe("errors module", () => {
   });
 
   it("sanitizes error messages removing tokens, keys and user home paths", () => {
+    // Synthetic fixtures, not real credentials: `sk-ant-api03-...` only mimics the
+    // shape of an API key and `/home/example/...` only mimics a user home path. Both
+    // exist to prove that sanitizeErrorMessage redacts them; they grant no access to
+    // anything. See SECURITY.md, "Fixtures de prueba".
     const raw = "Error: request failed with auth Bearer sk-ant-api03-abcdef1234567890 at /home/example/Desktop/secret/file.txt";
     const sanitized = sanitizeErrorMessage(raw);
     assert.ok(!sanitized.includes("sk-ant-api03-abcdef1234567890"), "Must not leak API key");

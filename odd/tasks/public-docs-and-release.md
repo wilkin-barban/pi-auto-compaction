@@ -55,7 +55,7 @@ Repositorio público en https://github.com/wilkinbarban/pi-auto-compaction, `UNL
 ## Evidencia RED/GREEN
 
 - No aplica TDD: unidad documental y de metadata. Verificación por `npm test` (**326/326 en 33 suites**), comprobación automática de enlaces Markdown en 31 archivos (sin enlaces relativos roscos), CI y `gh repo view`.
-- **Escaneo de privacidad**: `git ls-files` (59 archivos) sin `auth.json`, `settings.json`, sesiones, telemetría, `.env`, backups, journals ni claves; `git log -p --all` solo contiene fixtures sintéticos (`sk-ant-api03-abcdef…`, `sk-ant-secret-12345`, `Bearer sensitive-token-99999`); las cuatro rutas `/home/wilkin` de tests se sanitizaron a `/home/example` y la suite siguió verde. Árbol final sin rutas personales ni credenciales.
+- **Escaneo de privacidad**: `git ls-files` (59 archivos) sin `auth.json`, `settings.json`, sesiones, telemetría, `.env`, backups, journals ni claves; `git log -p --all` solo contiene fixtures sintéticos (`sk-ant-api03-abcdef…`, `sk-ant-secret-12345`, `Bearer sensitive-token-99999`); las cuatro rutas `/home/<usuario>` de tests se sanitizaron a `/home/example` y la suite siguió verde. Árbol final sin rutas personales ni credenciales.
 - **Script canónico de backup**: la prueba de integración de deploy lee el bloque Python de `docs/es/instalacion.md`; la traducción lo había reescrito con mensajes en español y rompía la aserción. Se restauró el script literal (mensajes en inglés) en ambas guías y se movió la ruta del test a `docs/es/`, sin debilitar la prueba.
 
 ## Log

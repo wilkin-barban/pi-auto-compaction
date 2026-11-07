@@ -17,6 +17,10 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - Plantillas de GitHub: `PULL_REQUEST_TEMPLATE.md`, `ISSUE_TEMPLATE/bug_report.yml`, `ISSUE_TEMPLATE/feature_request.yml` y `config.yml` con enlaces a docs, seguridad y discusiones.
 - Enlaces de contribución, conducta y seguridad actualizados en `README.md`, `README.es.md` y `AGENTS.md`.
 
+### Seguridad
+
+- Documentado el escaneo de privacidad del árbol publicado: los fixtures con forma de credencial de los tests (`sk-ant-api03-…`, `sk-ant-secret-12345`, `Bearer sensitive-token-99999`) son sintéticos y existen para probar la redacción y la lista blanca de la telemetría (ver `SECURITY.md`, «Fixtures de prueba»). Sanitizada además la mención a una ruta personal en el registro histórico de tareas.
+
 ### Repositorio
 
 - Repositorio oficial movido a `https://github.com/wilkin-barban/pi-auto-compaction`. Actualizadas las URLs de clonado en la documentación, la metadata `repository` de `package.json`, los enlaces de las plantillas de GitHub y las referencias al perfil del mantenedor. Sin cambios de licencia (`UNLICENSED`), visibilidad ni publicación en npm.
