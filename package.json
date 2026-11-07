@@ -5,7 +5,7 @@
   "private": true,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wilkinbarban/pi-auto-compaction.git"
+    "url": "git+https://github.com/wilkin-barban/pi-auto-compaction.git"
   },
   "engines": {
     "node": ">=22.19.0"

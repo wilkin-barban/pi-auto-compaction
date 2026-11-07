@@ -1,14 +1,14 @@
 blank_issues_enabled: false
 contact_links:
   - name: Documentation (English)
-    url: https://github.com/wilkinbarban/pi-auto-compaction/blob/main/docs/en/installation.md
+    url: https://github.com/wilkin-barban/pi-auto-compaction/blob/main/docs/en/installation.md
     about: Installation, adoption, update, rollback and verification.
   - name: Documentación (Español)
-    url: https://github.com/wilkinbarban/pi-auto-compaction/blob/main/docs/es/instalacion.md
+    url: https://github.com/wilkin-barban/pi-auto-compaction/blob/main/docs/es/instalacion.md
     about: Instalación, adopción, actualización, rollback y verificación.
   - name: Troubleshooting
-    url: https://github.com/wilkinbarban/pi-auto-compaction/blob/main/docs/en/troubleshooting.md
+    url: https://github.com/wilkin-barban/pi-auto-compaction/blob/main/docs/en/troubleshooting.md
     about: Diagnose the command, models, settings and deploy state before opening an issue.
   - name: Security policy
-    url: https://github.com/wilkinbarban/pi-auto-compaction/blob/main/SECURITY.md
+    url: https://github.com/wilkin-barban/pi-auto-compaction/blob/main/SECURITY.md
     about: Report vulnerabilities privately. Never open a public issue for a security problem.

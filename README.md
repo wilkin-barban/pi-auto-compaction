@@ -39,7 +39,7 @@ Follow these steps for a complete manual installation:
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/wilkinbarban/pi-auto-compaction.git "$HOME/proyectos/pi-auto-compaction"
+   git clone https://github.com/wilkin-barban/pi-auto-compaction.git "$HOME/proyectos/pi-auto-compaction"
    cd "$HOME/proyectos/pi-auto-compaction"
    ```
 

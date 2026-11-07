@@ -10,7 +10,7 @@ Para una instalación limpia e inicial en una estación de trabajo Linux estánd
 
 1. **Clonar el repositorio**:
    ```bash
-   git clone https://github.com/wilkinbarban/pi-auto-compaction.git "$HOME/proyectos/pi-auto-compaction"
+   git clone https://github.com/wilkin-barban/pi-auto-compaction.git "$HOME/proyectos/pi-auto-compaction"
    cd "$HOME/proyectos/pi-auto-compaction"
    ```
 
@@ -99,7 +99,7 @@ Utilice este método al instalar en un directorio de agente Pi limpio, sin loade
 ### Paso 1: Clonar y probar
 
 ```bash
-git clone https://github.com/wilkinbarban/pi-auto-compaction.git "$HOME/proyectos/pi-auto-compaction"
+git clone https://github.com/wilkin-barban/pi-auto-compaction.git "$HOME/proyectos/pi-auto-compaction"
 cd "$HOME/proyectos/pi-auto-compaction"
 npm ci --ignore-scripts
 npm test

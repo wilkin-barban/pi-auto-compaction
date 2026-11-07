@@ -3,7 +3,7 @@ name: pi-auto-compaction
 description: "Trigger: install, update, adopt, verify, diagnose, compaction summarizer, Pi, gentle-shell, herdr. Manage deployment, configuration, verification, and diagnostics for pi-auto-compaction."
 license: UNLICENSED
 metadata:
-  author: wilkinbarban
+  author: wilkin-barban
   version: "1.2.1"
 ---
 

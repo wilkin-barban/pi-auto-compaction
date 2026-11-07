@@ -36,7 +36,7 @@ Este Código de Conducta aplica en todos los espacios del proyecto —issues, pu
 
 ## Aplicación
 
-Los casos de comportamiento abusivo, de acoso o inaceptable pueden reportarse en privado al mantenedor a través de su perfil de GitHub (`wilkinbarban`) usando un canal privado. Todas las denuncias se revisarán e investigarán con prontitud y equidad.
+Los casos de comportamiento abusivo, de acoso o inaceptable pueden reportarse en privado al mantenedor a través de su perfil de GitHub (`wilkin-barban`) usando un canal privado. Todas las denuncias se revisarán e investigarán con prontitud y equidad.
 
 El mantenedor está obligado a respetar la privacidad y la seguridad de quien reporta un incidente.
 

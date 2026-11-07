@@ -8,7 +8,7 @@ body:
       value: |
         Thanks for the report. `pi-auto-compaction` is public source-available under `UNLICENSED`.
 
-        **Security issues must not be reported here.** Follow [SECURITY.md](https://github.com/wilkinbarban/pi-auto-compaction/blob/main/SECURITY.md) instead.
+        **Security issues must not be reported here.** Follow [SECURITY.md](https://github.com/wilkin-barban/pi-auto-compaction/blob/main/SECURITY.md) instead.
   - type: textarea
     id: environment
     attributes:
