@@ -1,5 +1,7 @@
 # Evidencia de R2A: SDK portable y dependencias
 
+> **Nota de migración (2026-11-07)**: el repositorio se movió a `https://github.com/wilkin-barban/pi-auto-compaction` y hoy es público. La primera GitHub Release es `v1.2.1`. Las referencias a la cuenta anterior se conservan como contexto histórico.
+
 ## Alcance y perfil
 
 Unidad limitada a `src/pi-sdk.mjs`, tres pruebas de integración, `package.json`,
@@ -10,7 +12,7 @@ la instalación activa ni el estado del agente. No se ejecutaron operaciones Git
 traslados, publicación ni actualización de paquetes globales.
 
 El paquete declara `private: true`, `license: "UNLICENSED"`, descripción en español
-y repositorio privado de destino `https://github.com/wilkinbarban/pi-auto-compaction`.
+y repositorio de destino (hoy público) `https://github.com/wilkin-barban/pi-auto-compaction`.
 Ambas dependencias de desarrollo están fijadas exactamente en `0.87.1`:
 `@earendil-works/pi-coding-agent` y `@earendil-works/pi-ai`. No se añadió un rango
 peer de compatibilidad. Sus `package.json` locales instalados confirman

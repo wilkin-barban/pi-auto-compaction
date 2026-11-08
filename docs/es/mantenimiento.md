@@ -181,6 +181,20 @@ Antes de dar por concluida cualquier operación de mantenimiento, verifique:
 
 ---
 
+## GitHub Releases
+
+Las GitHub Releases son snapshots de código fuente etiquetados `vX.Y.Z`; no son publicaciones en npm y no reemplazan los releases inmutables de despliegue bajo `$INSTALL_DIR/releases/<sha256>`.
+
+Para publicar una release:
+
+1. Actualice `CHANGELOG.md` y cree `docs/releases/vX.Y.Z.md`.
+2. Ejecute `npm test` y espere a que CI (Node 22/24 + smoke de compatibilidad con Pi 1.5.0) pase en `main`.
+3. Cree y suba un tag anotado: `git tag -a vX.Y.Z -m "pi-auto-compaction vX.Y.Z" && git push origin vX.Y.Z`.
+4. Cree la GitHub Release desde el archivo de notas: `gh release create vX.Y.Z --notes-file docs/releases/vX.Y.Z.md --latest`.
+5. Verifique el tag, las notas y el estado de CI. GitHub genera automáticamente los archivos zip/tar del código fuente; no se requieren binarios.
+
+---
+
 ## Próximos pasos
 
 - Consultar pasos de solución de problemas: [`docs/es/solucion-de-problemas.md`](solucion-de-problemas.md)

@@ -7,6 +7,10 @@
     "type": "git",
     "url": "git+https://github.com/wilkin-barban/pi-auto-compaction.git"
   },
+  "homepage": "https://github.com/wilkin-barban/pi-auto-compaction#readme",
+  "bugs": {
+    "url": "https://github.com/wilkin-barban/pi-auto-compaction/issues"
+  },
   "engines": {
     "node": ">=22.19.0"
   },

@@ -4,30 +4,11 @@ Todos los cambios notables en este proyecto serán documentados en este archivo.
 
 El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
-> **Nota de versión**: Este repositorio es público source-available bajo `UNLICENSED` y no se publica en npm. La mención de versiones describe hitos del código fuente y no implica la publicación formal de releases en GitHub Releases ni en registros públicos de paquetes.
+> **Nota de versión**: Este repositorio es público source-available bajo `UNLICENSED` y no se publica en npm. Las GitHub Releases son snapshots de código fuente para instalación, auditoría y trazabilidad; no implican publicación en npm ni cambio de licencia.
 
 ---
 
-## [Unreleased]
-
-### Documentación
-
-- `CONTRIBUTING.md` en inglés (default) y `CONTRIBUTING.es.md` completo: alcance source-available, ruta rápida fork/PR, desarrollo y tests offline, arquitectura, documentación bilingüe, cambios de políticas, commits y review, issues y seguridad, definición de terminado, licencia de las contribuciones y buenas primeras contribuciones.
-- `CODE_OF_CONDUCT.md` y `CODE_OF_CONDUCT.es.md` (Contributor Covenant 2.1 adaptado, reporte privado).
-- Plantillas de GitHub: `PULL_REQUEST_TEMPLATE.md`, `ISSUE_TEMPLATE/bug_report.yml`, `ISSUE_TEMPLATE/feature_request.yml` y `config.yml` con enlaces a docs, seguridad y discusiones.
-- Enlaces de contribución, conducta y seguridad actualizados en `README.md`, `README.es.md` y `AGENTS.md`.
-
-### Seguridad
-
-- Documentado el escaneo de privacidad del árbol publicado: los fixtures con forma de credencial de los tests (`sk-ant-api03-…`, `sk-ant-secret-12345`, `Bearer sensitive-token-99999`) son sintéticos y existen para probar la redacción y la lista blanca de la telemetría (ver `SECURITY.md`, «Fixtures de prueba»). Sanitizada además la mención a una ruta personal en el registro histórico de tareas.
-
-### Repositorio
-
-- Repositorio oficial movido a `https://github.com/wilkin-barban/pi-auto-compaction`. Actualizadas las URLs de clonado en la documentación, la metadata `repository` de `package.json`, los enlaces de las plantillas de GitHub y las referencias al perfil del mantenedor. Sin cambios de licencia (`UNLICENSED`), visibilidad ni publicación en npm.
-
----
-
-## [1.2.1] - 2026-11-06
+## [1.2.1] - 2026-11-07
 
 ### Corregido
 
@@ -37,8 +18,20 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 
 - Documentado el workaround manual de configuración mediante edición directa de `$PI_CODING_AGENT_DIR/.pi-auto-compaction-settings.json` o uso de variables de entorno `PI_AUTO_COMPACTION_*`, seguido de `/reload` y verificación con `doctor`.
 - Guías alineadas con el resumidor configurable (OmniRoute solo como valor por defecto), el conteo final de 326/33 y el filtro tokenizado real del selector.
+- `CONTRIBUTING.md` en inglés (default) y `CONTRIBUTING.es.md` completo: alcance source-available, ruta rápida fork/PR, desarrollo y tests offline, arquitectura, documentación bilingüe, cambios de políticas, commits y review, issues y seguridad, definición de terminado, licencia de las contribuciones y buenas primeras contribuciones.
+- `CODE_OF_CONDUCT.md` y `CODE_OF_CONDUCT.es.md` (Contributor Covenant 2.1 adaptado, reporte privado).
+- Plantillas de GitHub: `PULL_REQUEST_TEMPLATE.md`, `ISSUE_TEMPLATE/bug_report.yml`, `ISSUE_TEMPLATE/feature_request.yml` y `config.yml` con enlaces a docs, seguridad y discusiones.
+- Enlaces de contribución, conducta y seguridad actualizados en `README.md`, `README.es.md` y `AGENTS.md`.
+- Notas de release bilingües en `docs/releases/v1.2.1.md`.
 
----
+### Seguridad
+
+- Documentado el escaneo de privacidad del árbol publicado: los fixtures con forma de credencial de los tests (`sk-ant-api03-…`, `sk-ant-secret-12345`, `Bearer sensitive-token-99999`) son sintéticos y existen para probar la redacción y la lista blanca de la telemetría (ver `SECURITY.md`, «Fixtures de prueba»). Sanitizada además la mención a una ruta personal en el registro histórico de tareas.
+
+### Repositorio
+
+- Repositorio oficial movido a `https://github.com/wilkin-barban/pi-auto-compaction`. Actualizadas las URLs de clonado en la documentación, la metadata `repository` de `package.json`, los enlaces de las plantillas de GitHub y las referencias al perfil del mantenedor. Sin cambios de licencia (`UNLICENSED`), visibilidad ni publicación en npm.
+- Primera GitHub Release `v1.2.1` publicada como snapshot de código fuente para instalación y auditoría. No es una publicación en npm ni cambia la licencia `UNLICENSED`.
 
 ## [1.2.0] - 2026-11-06
 

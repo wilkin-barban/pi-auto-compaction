@@ -1,5 +1,7 @@
 # Documentación profesional bilingüe y publicación pública (1.2.1)
 
+> **Nota posterior (2026-11-07)**: el repositorio se movió a `https://github.com/wilkin-barban/pi-auto-compaction` y se publicó la primera GitHub Release `v1.2.1`. Las referencias a la cuenta anterior en este registro son históricas.
+
 Objetivo: convertir la documentación en un manual técnico bilingüe (inglés default, español completo), orientado a agentes, con una skill registrada, y publicar el repositorio como fuente disponible bajo `UNLICENSED`, después de un escaneo de privacidad limpio.
 
 Alcance: `README.md` en inglés y `README.es.md`; `docs/en/*` (5 documentos) y `docs/es/*` (5 documentos, movidos desde `docs/*.md`); `skills/pi-auto-compaction/**`; actualización de `AGENTS.md`, `SECURITY.md`, `CONTRIBUTING.md`, `package.json` y avisos de política; escaneo de secretos; metadata de GitHub y cambio de visibilidad.
@@ -50,7 +52,7 @@ No-objetivos: no cambiar código, tests, esquema de settings, políticas v2 ni e
 
 ## Resultado
 
-Repositorio público en https://github.com/wilkinbarban/pi-auto-compaction, `UNLICENSED` y `private: true` en `package.json`, sin publicación en npm. Documentación bilingüe: `README.md` (EN, default) + `README.es.md`, `docs/en/*` (5) y `docs/es/*` (5), skill `skills/pi-auto-compaction/SKILL.md` con prompts EN/ES. Escaneo de privacidad limpio y CI verde antes del cambio de visibilidad.
+Repositorio público en https://github.com/wilkin-barban/pi-auto-compaction, `UNLICENSED` y `private: true` en `package.json`, sin publicación en npm. Documentación bilingüe: `README.md` (EN, default) + `README.es.md`, `docs/en/*` (5) y `docs/es/*` (5), skill `skills/pi-auto-compaction/SKILL.md` con prompts EN/ES. Escaneo de privacidad limpio y CI verde antes del cambio de visibilidad.
 
 ## Evidencia RED/GREEN
 

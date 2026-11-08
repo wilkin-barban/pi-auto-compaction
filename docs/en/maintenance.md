@@ -181,6 +181,20 @@ Before completing any maintenance operation, verify:
 
 ---
 
+## GitHub Releases
+
+GitHub Releases are source snapshots tagged `vX.Y.Z`; they are not npm publications and do not replace the immutable deployment releases under `$INSTALL_DIR/releases/<sha256>`.
+
+To publish a release:
+
+1. Update `CHANGELOG.md` and create `docs/releases/vX.Y.Z.md`.
+2. Run `npm test` and wait for CI (Node 22/24 + Pi 1.5.0 compatibility smoke) to pass on `main`.
+3. Create and push an annotated tag: `git tag -a vX.Y.Z -m "pi-auto-compaction vX.Y.Z" && git push origin vX.Y.Z`.
+4. Create the GitHub release from the notes file: `gh release create vX.Y.Z --notes-file docs/releases/vX.Y.Z.md --latest`.
+5. Verify the tag, release notes, and CI status. GitHub generates the source zip/tar archives automatically; no binary assets are required.
+
+---
+
 ## Next Steps
 
 - Consult troubleshooting steps: [`docs/en/troubleshooting.md`](troubleshooting.md)

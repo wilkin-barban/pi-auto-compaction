@@ -43,6 +43,8 @@ Follow these steps for a complete manual installation:
    cd "$HOME/proyectos/pi-auto-compaction"
    ```
 
+   > Alternatively, download the source archive from the [latest GitHub release](https://github.com/wilkin-barban/pi-auto-compaction/releases/latest).
+
 2. **Install dependencies and verify the test suite**:
    Requires Node.js `>=22.19.0`. Expect exactly **326 passing tests across 33 suites**.
    ```bash
@@ -258,6 +260,7 @@ This repository and its configuration files **never store credentials**. All API
 
 ### Project Policies
 - [**Changelog**](CHANGELOG.md): Historical record of versions and changes.
+- [**Releases**](https://github.com/wilkin-barban/pi-auto-compaction/releases): Source snapshots and release notes. Current: [v1.2.1](docs/releases/v1.2.1.md).
 - [**Security Policy**](SECURITY.md): Vulnerability reporting procedures and privacy guarantees.
 - [**Contributing Guide**](CONTRIBUTING.md) / [Guía en español](CONTRIBUTING.es.md): fork/PR flow, TDD discipline, tests, docs and contribution license.
 - [**Code of Conduct**](CODE_OF_CONDUCT.md) / [Código de Conducta](CODE_OF_CONDUCT.es.md): community standards and private reporting.
